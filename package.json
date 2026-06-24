@@ -1,0 +1,16 @@
+{
+  "name": "pick-your-path-adventure",
+  "version": "1.0.0",
+  "description": "A dynamic Choose Your Own Adventure web game powered by Claude.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.69.0",
+    "dotenv": "^17.0.0",
+    "express": "^5.1.0"
+  }
+}

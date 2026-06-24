@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Plotweave — An Adventure</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=EB+Garamond:ital@0;1&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #14110d;
+        --panel: #1f1b15;
+        --ink: #ece3d0;
+        --ink-soft: #b9ad94;
+        --gold: #c9a25a;
+        --gold-bright: #e7c684;
+        --ember: #b5562a;
+        --line: #3a3227;
+        --shadow: rgba(0, 0, 0, 0.55);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+      }
+
+      body {
+        font-family: "EB Garamond", Georgia, serif;
+        color: var(--ink);
+        background:
+          radial-gradient(1200px 700px at 50% -10%, #2a2318 0%, var(--bg) 60%);
+        min-height: 100vh;
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding: 4vh 16px 8vh;
+      }
+
+      /* Drifting-ember canvas sits above the background, below the content. */
+      #embers {
+        position: fixed;
+        inset: 0;
+        z-index: 0;
+        pointer-events: none;
+      }
+
+      .vignette {
+        position: fixed;
+        inset: 0;
+        z-index: 1;
+        pointer-events: none;
+        box-shadow: inset 0 0 220px 60px rgba(0, 0, 0, 0.7);
+      }
+
+      .book {
+        width: min(760px, 100%);
+        background: linear-gradient(180deg, #221d16, var(--panel));
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        box-shadow: 0 30px 70px var(--shadow);
+        padding: clamp(22px, 4vw, 48px);
+        position: relative;
+        z-index: 2;
+      }
+
+      .screen.hidden,
+      .hidden {
+        display: none !important;
+      }
+
+      /* ---------- Start screen ---------- */
+      #start-screen {
+        animation: rise 0.8s ease both;
+      }
+
+      @keyframes rise {
+        from {
+          opacity: 0;
+          transform: translateY(16px);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+
+      .title {
+        font-family: "Cinzel", serif;
+        font-weight: 700;
+        font-size: clamp(2.2rem, 6vw, 3.4rem);
+        letter-spacing: 0.05em;
+        text-align: center;
+        margin: 0;
+        /* Animated golden shimmer swept across the letters. */
+        background: linear-gradient(
+          100deg,
+          var(--gold) 0%,
+          var(--gold-bright) 25%,
+          #fff3d6 50%,
+          var(--gold-bright) 75%,
+          var(--gold) 100%
+        );
+        background-size: 200% auto;
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        -webkit-text-fill-color: transparent;
+        animation: shimmer 6s linear infinite, glow 3.4s ease-in-out infinite;
+      }
+
+      @keyframes shimmer {
+        to {
+          background-position: 200% center;
+        }
+      }
+
+      @keyframes glow {
+        0%,
+        100% {
+          filter: drop-shadow(0 0 6px rgba(201, 162, 90, 0.25));
+        }
+        50% {
+          filter: drop-shadow(0 0 20px rgba(231, 198, 132, 0.55));
+        }
+      }
+
+      .subtitle {
+        text-align: center;
+        font-style: italic;
+        color: var(--ink-soft);
+        margin: 0.4rem 0 2rem;
+        font-size: 1.15rem;
+      }
+
+      .prompt-label {
+        text-align: center;
+        color: var(--ink-soft);
+        letter-spacing: 0.03em;
+        margin-bottom: 1rem;
+      }
+
+      .theme-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+        gap: 12px;
+        margin-bottom: 1.6rem;
+      }
+
+      .theme-card {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 16px 18px;
+        font-family: "EB Garamond", serif;
+        font-size: 1.1rem;
+        color: var(--ink);
+        background: #241f18;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        cursor: pointer;
+        transition: transform 0.12s ease, border-color 0.2s ease, background 0.2s ease;
+      }
+
+      .theme-card:hover {
+        transform: translateY(-2px);
+        border-color: var(--gold);
+        background: #2c251b;
+        box-shadow: 0 6px 22px rgba(201, 162, 90, 0.18);
+      }
+
+      .theme-icon {
+        font-size: 1.5rem;
+      }
+
+      .custom-theme,
+      .custom-action {
+        display: flex;
+        gap: 10px;
+      }
+
+      input[type="text"] {
+        flex: 1;
+        padding: 13px 16px;
+        font-family: "EB Garamond", serif;
+        font-size: 1.05rem;
+        color: var(--ink);
+        background: #19150f;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        outline: none;
+        transition: border-color 0.2s ease;
+      }
+
+      input[type="text"]:focus {
+        border-color: var(--gold);
+      }
+
+      input[type="text"]::placeholder {
+        color: #6f6552;
+        font-style: italic;
+      }
+
+      .begin-btn,
+      .action-btn {
+        padding: 0 22px;
+        font-family: "Cinzel", serif;
+        font-size: 1rem;
+        letter-spacing: 0.04em;
+        color: #1a150e;
+        background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+        border: none;
+        border-radius: 10px;
+        cursor: pointer;
+        transition: filter 0.15s ease;
+      }
+
+      .begin-btn:hover,
+      .action-btn:hover {
+        filter: brightness(1.08);
+      }
+
+      /* ---------- Game screen ---------- */
+      .story {
+        font-size: clamp(1.12rem, 2.4vw, 1.32rem);
+        line-height: 1.75;
+        margin-bottom: 1.8rem;
+        white-space: pre-wrap;
+      }
+
+      .story::first-letter {
+        font-family: "Cinzel", serif;
+        font-size: 3.1rem;
+        float: left;
+        line-height: 0.8;
+        padding: 6px 10px 0 0;
+        color: var(--gold-bright);
+      }
+
+      .choices {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        margin-bottom: 1.6rem;
+      }
+
+      .choice {
+        text-align: left;
+        padding: 15px 20px;
+        font-family: "EB Garamond", serif;
+        font-size: 1.12rem;
+        color: var(--ink);
+        background: #241f18;
+        border: 1px solid var(--line);
+        border-left: 3px solid var(--gold);
+        border-radius: 10px;
+        cursor: pointer;
+        transition: transform 0.12s ease, background 0.2s ease, border-color 0.2s ease;
+      }
+
+      .choice:hover {
+        transform: translateX(4px);
+        background: #2c251b;
+        border-left-color: var(--ember);
+      }
+
+      .choice .num {
+        color: var(--gold);
+        font-family: "Cinzel", serif;
+        margin-right: 12px;
+      }
+
+      .restart {
+        display: block;
+        margin: 1.8rem auto 0;
+        padding: 9px 18px;
+        font-family: "EB Garamond", serif;
+        font-size: 0.95rem;
+        color: var(--ink-soft);
+        background: transparent;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        cursor: pointer;
+        transition: color 0.2s ease, border-color 0.2s ease;
+      }
+
+      .restart:hover {
+        color: var(--ink);
+        border-color: var(--gold);
+      }
+
+      /* ---------- Loader ---------- */
+      .loader {
+        text-align: center;
+        padding: 2.5rem 0 1rem;
+        color: var(--ink-soft);
+        font-style: italic;
+      }
+
+      .quill {
+        font-size: 2.4rem;
+        animation: sway 1.4s ease-in-out infinite;
+      }
+
+      @keyframes sway {
+        0%, 100% { transform: rotate(-8deg) translateY(0); }
+        50% { transform: rotate(8deg) translateY(-6px); }
+      }
+
+      .error {
+        color: #e8a07a;
+        text-align: center;
+        font-style: italic;
+        margin-top: 1rem;
+      }
+
+      .error-banner {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 1.4rem;
+        padding: 16px;
+        background: #2a1f18;
+        border: 1px solid #5a3b2a;
+        border-radius: 10px;
+      }
+
+      .error-banner .error {
+        margin: 0;
+      }
+
+      .error-banner .action-btn {
+        padding: 9px 22px;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="embers" aria-hidden="true"></canvas>
+    <div class="vignette"></div>
+    <main class="book">
+      <!-- Title / theme-selection screen -->
+      <section id="start-screen" class="screen">
+        <h1 class="title">Plotweave</h1>
+        <p class="subtitle">An adventure written as you play.</p>
+
+        <p class="prompt-label">Choose a setting, or invent your own:</p>
+        <div id="theme-grid" class="theme-grid">
+          <button class="theme-card" data-theme="High fantasy — ancient kingdoms, dragons, and forgotten magic">
+            <span class="theme-icon">🏰</span><span>High Fantasy</span>
+          </button>
+          <button class="theme-card" data-theme="Deep space — a derelict starship drifting through the silent void">
+            <span class="theme-icon">🚀</span><span>Deep Space</span>
+          </button>
+          <button class="theme-card" data-theme="Noir mystery — rain-slicked streets and secrets that kill">
+            <span class="theme-icon">🕵️</span><span>Noir Mystery</span>
+          </button>
+          <button class="theme-card" data-theme="Post-apocalypse — survival in the ruins of a fallen world">
+            <span class="theme-icon">🧟</span><span>Post-Apocalypse</span>
+          </button>
+          <button class="theme-card" data-theme="High seas — pirates, buried treasure, and uncharted waters">
+            <span class="theme-icon">🏴‍☠️</span><span>High Seas</span>
+          </button>
+          <button class="theme-card" data-theme="Gothic horror — a crumbling manor with a dark heart">
+            <span class="theme-icon">👻</span><span>Gothic Horror</span>
+          </button>
+        </div>
+
+        <form id="custom-theme-form" class="custom-theme">
+          <input
+            id="custom-theme-input"
+            type="text"
+            placeholder="…or type your own theme and press Begin"
+            autocomplete="off"
+          />
+          <button type="submit" class="begin-btn">Begin ▸</button>
+        </form>
+      </section>
+
+      <!-- Story / play screen -->
+      <section id="game-screen" class="screen hidden">
+        <div id="story" class="story"></div>
+
+        <div id="choices" class="choices"></div>
+
+        <form id="custom-action-form" class="custom-action">
+          <input
+            id="custom-action-input"
+            type="text"
+            placeholder="Or do something else entirely…"
+            autocomplete="off"
+          />
+          <button type="submit" class="action-btn">Act ▸</button>
+        </form>
+
+        <button id="restart-btn" class="restart">⟲ New Adventure</button>
+      </section>
+
+      <!-- Loading indicator -->
+      <div id="loader" class="loader hidden">
+        <div class="quill">🖋️</div>
+        <p id="loader-text">The storyteller is writing…</p>
+      </div>
+    </main>
+
+    <script>
+      // ---- Element references ----
+      const startScreen = document.getElementById("start-screen");
+      const gameScreen = document.getElementById("game-screen");
+      const loader = document.getElementById("loader");
+
+      const storyEl = document.getElementById("story");
+      const choicesEl = document.getElementById("choices");
+
+      const themeGrid = document.getElementById("theme-grid");
+      const customThemeForm = document.getElementById("custom-theme-form");
+      const customThemeInput = document.getElementById("custom-theme-input");
+
+      const customActionForm = document.getElementById("custom-action-form");
+      const customActionInput = document.getElementById("custom-action-input");
+      const restartBtn = document.getElementById("restart-btn");
+
+      // ---- Game state ----
+      // The full conversation history is kept here and round-tripped to the server,
+      // which stays stateless.
+      let history = [];
+      let busy = false;
+      let lastTurn = null; // a function that re-runs the most recent turn (for retry)
+
+      // ---- Networking ----
+      async function requestStory(payload) {
+        const res = await fetch("/api/story", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const { error } = await res.json().catch(() => ({}));
+          throw new Error(error || "Something went wrong.");
+        }
+        return res.json();
+      }
+
+      // ---- Turn handling ----
+      async function startAdventure(theme) {
+        if (busy || !theme) return;
+        history = [];
+        showScreen("game");
+        storyEl.textContent = "";
+        choicesEl.innerHTML = "";
+        lastTurn = () => requestStory({ history: [], theme });
+        await runTurn("Setting the stage…");
+      }
+
+      async function takeAction(action) {
+        if (busy || !action) return;
+        // history isn't updated until a turn succeeds, so retrying replays the same turn.
+        lastTurn = () => requestStory({ history, action });
+        await runTurn("The story unfolds…");
+      }
+
+      async function runTurn(loadingText) {
+        if (!lastTurn) return;
+        clearError();
+        setLoading(true, loadingText);
+        try {
+          const data = await lastTurn();
+          applyTurn(data);
+        } catch (err) {
+          renderError(err.message);
+        } finally {
+          setLoading(false);
+        }
+      }
+
+      function applyTurn(data) {
+        history = data.history || history;
+        renderScene(data.scene, data.choices);
+      }
+
+      // ---- Rendering ----
+      function renderScene(scene, choices) {
+        storyEl.textContent = scene;
+        choicesEl.innerHTML = "";
+        choices.forEach((choice, i) => {
+          const btn = document.createElement("button");
+          btn.className = "choice";
+          btn.innerHTML = `<span class="num">${i + 1}</span>${escapeHtml(choice)}`;
+          btn.addEventListener("click", () => takeAction(choice));
+          choicesEl.appendChild(btn);
+        });
+        storyEl.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+
+      function renderError(message) {
+        clearError();
+        const banner = document.createElement("div");
+        banner.id = "error-banner";
+        banner.className = "error-banner";
+        banner.innerHTML = `<p class="error">${escapeHtml(message)}</p>`;
+
+        const retry = document.createElement("button");
+        retry.className = "action-btn";
+        retry.textContent = "↻ Try again";
+        retry.addEventListener("click", () => runTurn("Trying again…"));
+        banner.appendChild(retry);
+
+        // Insert above the choices so your existing options stay clickable too.
+        choicesEl.parentNode.insertBefore(banner, choicesEl);
+      }
+
+      function clearError() {
+        document.getElementById("error-banner")?.remove();
+      }
+
+      function setLoading(state, text = "The storyteller is writing…") {
+        busy = state;
+        loader.querySelector("#loader-text").textContent = text;
+        loader.classList.toggle("hidden", !state);
+        // Dim the choices while waiting.
+        choicesEl.style.opacity = state ? "0.35" : "1";
+        customActionForm.style.opacity = state ? "0.35" : "1";
+      }
+
+      function showScreen(which) {
+        startScreen.classList.toggle("hidden", which !== "start");
+        gameScreen.classList.toggle("hidden", which !== "game");
+      }
+
+      function escapeHtml(str) {
+        const div = document.createElement("div");
+        div.textContent = str;
+        return div.innerHTML;
+      }
+
+      // ---- Event wiring ----
+      themeGrid.addEventListener("click", (e) => {
+        const card = e.target.closest(".theme-card");
+        if (card) startAdventure(card.dataset.theme);
+      });
+
+      customThemeForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const theme = customThemeInput.value.trim();
+        if (theme) startAdventure(theme);
+      });
+
+      customActionForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const action = customActionInput.value.trim();
+        if (action) {
+          customActionInput.value = "";
+          takeAction(action);
+        }
+      });
+
+      restartBtn.addEventListener("click", () => {
+        if (busy) return;
+        customThemeInput.value = "";
+        showScreen("start");
+      });
+
+      // ---- Drifting golden embers on the background ----
+      (function () {
+        const canvas = document.getElementById("embers");
+        const ctx = canvas.getContext("2d");
+        let w, h, embers;
+
+        function makeEmber() {
+          const hero = Math.random() < 0.14; // ~1 in 7 is a brighter "hero" spark
+          const baseR = (0.8 + Math.random() * 2.2) * 1.5; // 50% bigger overall
+          return {
+            x: Math.random() * w,
+            y: Math.random() * h,
+            r: hero ? baseR * 1.7 : baseR, // core size (heroes larger still)
+            drift: 0.4 + Math.random() * 0.9, // how far it sways sideways
+            phase: Math.random() * Math.PI * 2,
+            sway: (0.4 + Math.random() * 0.8) * 1.3, // sway speed (30% faster)
+            speed: (0.12 + Math.random() * 0.4) * 1.3, // upward rise (30% faster)
+            alpha: hero ? 0.78 + Math.random() * 0.22 : 0.32 + Math.random() * 0.62,
+            twinkle: 0.6 + Math.random() * 1.4, // brightness flicker speed
+            hero,
+          };
+        }
+
+        function resize() {
+          w = canvas.width = window.innerWidth;
+          h = canvas.height = window.innerHeight;
+          // Particle count scales gently with screen size (~2.5x density).
+          const count = Math.min(125, Math.max(50, Math.round((w * h) / 16800)));
+          embers = Array.from({ length: count }, makeEmber);
+        }
+
+        let t = 0;
+        function frame() {
+          t += 0.016;
+          ctx.clearRect(0, 0, w, h);
+          for (const e of embers) {
+            e.y -= e.speed;
+            e.phase += 0.01 * e.sway;
+            const x = e.x + Math.sin(e.phase) * e.drift * 14;
+            // Once it floats off the top, respawn at the bottom.
+            if (e.y < -12) {
+              e.y = h + 12;
+              e.x = Math.random() * w;
+            }
+            const flicker =
+              e.alpha * (0.7 + 0.3 * Math.sin(t * e.twinkle + e.phase));
+            const radius = e.r * 4;
+            // Hero sparks get a brighter, near-white warm core.
+            const core = e.hero ? "255, 240, 205" : "231, 198, 132";
+            const g = ctx.createRadialGradient(x, e.y, 0, x, e.y, radius);
+            g.addColorStop(0, `rgba(${core}, ${flicker})`);
+            g.addColorStop(0.4, `rgba(201, 162, 90, ${flicker * 0.5})`);
+            g.addColorStop(1, "rgba(201, 162, 90, 0)");
+            ctx.fillStyle = g;
+            ctx.beginPath();
+            ctx.arc(x, e.y, radius, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          requestAnimationFrame(frame);
+        }
+
+        window.addEventListener("resize", resize);
+        resize();
+        frame();
+      })();
+    </script>
+  </body>
+</html>
