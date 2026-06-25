@@ -534,24 +534,6 @@
         margin: 0 0 1.4rem;
       }
 
-      /* Blinking cursor shown at the end of a scene while it streams in. */
-      .scene.streaming::after {
-        content: "▋";
-        margin-left: 1px;
-        color: var(--gold);
-        animation: caret 1s step-end infinite;
-      }
-
-      @keyframes caret {
-        0%,
-        100% {
-          opacity: 1;
-        }
-        50% {
-          opacity: 0;
-        }
-      }
-
       /* The action the player took, shown above the scene it led to. */
       .action-taken {
         margin: 1.9rem 0 0.9rem;
@@ -1170,7 +1152,7 @@
         currentTurnEls.push(marker);
 
         const sceneEl = document.createElement("p");
-        sceneEl.className = "scene streaming"; // blinking caret while it writes
+        sceneEl.className = "scene";
         storyEl.appendChild(sceneEl);
         currentTurnEls.push(sceneEl);
         currentTurnEls[0].scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1198,17 +1180,16 @@
           throw new Error(error || "Something went wrong.");
         }
 
-        // Stream the text in, but reveal it smoothly at a steady cadence —
-        // decoupled from the bursty network chunks — with a fading leading edge.
+        // Reveal the streamed text smoothly, letter-by-letter, decoupled from the
+        // bursty network chunks, with a soft fade on the leading edge.
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let full = "";
-        let sceneTarget = ""; // scene text received so far (the typewriter's goal)
+        let sceneTarget = ""; // scene text received so far (the reveal's goal)
         let sceneComplete = false; // ###CHOICES### reached → scene fully received
         let shown = 0; // characters revealed so far (fractional accumulator)
-        // Reveal speed in characters per frame (~60fps → ~90 chars/sec). Kept
-        // deliberately below the model's generation rate so the typewriter always
-        // has a buffer ahead of it and never catches up and stalls.
+        // Reveal speed in characters per frame (~60fps → ~90 chars/sec), kept below
+        // the model's generation rate so it never catches up and stalls.
         const CHARS_PER_FRAME = 1.5;
 
         const typingDone = new Promise((resolve) => {
@@ -1244,13 +1225,12 @@
           sceneTarget = tidy(i === -1 ? full : full.slice(0, i));
           sceneComplete = true;
         }
-        await typingDone; // let the typewriter finish before showing the choices
+        await typingDone; // let the reveal finish before showing the choices
 
         // Finalise scene, choices, and character state.
         const idxC = full.indexOf(DELIM_CHOICES);
         const scene = tidy(idxC === -1 ? full : full.slice(0, idxC));
         sceneEl.textContent = scene; // clean, fully-revealed text (no fade spans)
-        sceneEl.classList.remove("streaming");
 
         let afterChoices = idxC === -1 ? "" : full.slice(idxC + DELIM_CHOICES.length);
         let stateText = "";
