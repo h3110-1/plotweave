@@ -78,7 +78,8 @@
       }
 
       /* ---------- Start screen ---------- */
-      #start-screen {
+      #start-screen,
+      #password-screen {
         animation: rise 0.8s ease both;
       }
 
@@ -236,7 +237,23 @@
         white-space: pre-wrap;
       }
 
-      .story::first-letter {
+      .scene {
+        margin: 0 0 1.4rem;
+      }
+
+      /* The action the player took, shown above the scene it led to. */
+      .action-taken {
+        margin: 1.9rem 0 0.9rem;
+        padding-top: 1.4rem;
+        border-top: 1px solid var(--line);
+        color: var(--gold);
+        font-style: italic;
+        font-size: 1.02rem;
+        opacity: 0.9;
+      }
+
+      /* Drop cap only on the very first scene of the tale. */
+      .story .scene:first-of-type::first-letter {
         font-family: "Cinzel", serif;
         font-size: 3.1rem;
         float: left;
@@ -347,8 +364,24 @@
     <canvas id="embers" aria-hidden="true"></canvas>
     <div class="vignette"></div>
     <main class="book">
+      <!-- Password screen -->
+      <section id="password-screen" class="screen hidden">
+        <h1 class="title">Plotweave</h1>
+        <p class="subtitle">Enter the password to begin.</p>
+        <form id="password-form" class="custom-theme">
+          <input
+            id="password-input"
+            type="password"
+            placeholder="Password"
+            autocomplete="off"
+          />
+          <button type="submit" class="begin-btn">Enter ▸</button>
+        </form>
+        <p id="password-error" class="error"></p>
+      </section>
+
       <!-- Title / theme-selection screen -->
-      <section id="start-screen" class="screen">
+      <section id="start-screen" class="screen hidden">
         <h1 class="title">Plotweave</h1>
         <p class="subtitle">An adventure written as you play.</p>
 
@@ -360,8 +393,8 @@
           <button class="theme-card" data-theme="Deep space — a derelict starship drifting through the silent void">
             <span class="theme-icon">🚀</span><span>Deep Space</span>
           </button>
-          <button class="theme-card" data-theme="Noir mystery — rain-slicked streets and secrets that kill">
-            <span class="theme-icon">🕵️</span><span>Noir Mystery</span>
+          <button class="theme-card" data-theme="Science fiction — distant futures, alien worlds, and impossible technology">
+            <span class="theme-icon">🛸</span><span>Sci-Fi</span>
           </button>
           <button class="theme-card" data-theme="Post-apocalypse — survival in the ruins of a fallen world">
             <span class="theme-icon">🧟</span><span>Post-Apocalypse</span>
@@ -369,8 +402,26 @@
           <button class="theme-card" data-theme="High seas — pirates, buried treasure, and uncharted waters">
             <span class="theme-icon">🏴‍☠️</span><span>High Seas</span>
           </button>
-          <button class="theme-card" data-theme="Gothic horror — a crumbling manor with a dark heart">
-            <span class="theme-icon">👻</span><span>Gothic Horror</span>
+          <button class="theme-card" data-theme="War — soldiers, trenches, and impossible orders on a brutal front">
+            <span class="theme-icon">🪖</span><span>War</span>
+          </button>
+          <button class="theme-card" data-theme="Wild West — dusty frontier towns, gunslingers, and buried gold">
+            <span class="theme-icon">🤠</span><span>Wild West</span>
+          </button>
+          <button class="theme-card" data-theme="Cyberpunk — a neon megacity of hackers, megacorps, and endless rain">
+            <span class="theme-icon">🌆</span><span>Cyberpunk</span>
+          </button>
+          <button class="theme-card" data-theme="Time travel — leaping across eras while dodging paradoxes that could unmake everything">
+            <span class="theme-icon">⏳</span><span>Time Travel</span>
+          </button>
+          <button class="theme-card" data-theme="Mythic Greece — gods, monsters, and heroes bound by fate">
+            <span class="theme-icon">🏛️</span><span>Mythic Greece</span>
+          </button>
+          <button class="theme-card" data-theme="Spy thriller — espionage, gadgets, and double agents out in the cold">
+            <span class="theme-icon">🕴️</span><span>Spy Thriller</span>
+          </button>
+          <button class="theme-card" data-theme="Superhero — powers, secret identities, and a city that needs saving">
+            <span class="theme-icon">🦸</span><span>Superhero</span>
           </button>
         </div>
 
@@ -413,6 +464,11 @@
 
     <script>
       // ---- Element references ----
+      const passwordScreen = document.getElementById("password-screen");
+      const passwordForm = document.getElementById("password-form");
+      const passwordInput = document.getElementById("password-input");
+      const passwordError = document.getElementById("password-error");
+
       const startScreen = document.getElementById("start-screen");
       const gameScreen = document.getElementById("game-screen");
       const loader = document.getElementById("loader");
@@ -434,14 +490,27 @@
       let history = [];
       let busy = false;
       let lastTurn = null; // a function that re-runs the most recent turn (for retry)
+      let appPassword = sessionStorage.getItem("plotweave_pw") || ""; // gate password
+      let pendingAction = null; // the action that triggered the in-flight turn
 
       // ---- Networking ----
       async function requestStory(payload) {
         const res = await fetch("/api/story", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "x-app-password": appPassword,
+          },
           body: JSON.stringify(payload),
         });
+        if (res.status === 401) {
+          // Password missing/changed — send the player back to the login screen.
+          sessionStorage.removeItem("plotweave_pw");
+          appPassword = "";
+          showScreen("password");
+          passwordError.textContent = "Please enter the password again.";
+          throw new Error("Password required.");
+        }
         if (!res.ok) {
           const { error } = await res.json().catch(() => ({}));
           throw new Error(error || "Something went wrong.");
@@ -454,8 +523,9 @@
         if (busy || !theme) return;
         history = [];
         showScreen("game");
-        storyEl.textContent = "";
+        storyEl.innerHTML = ""; // fresh tale
         choicesEl.innerHTML = "";
+        pendingAction = null;
         lastTurn = () => requestStory({ history: [], theme });
         await runTurn("Setting the stage…");
       }
@@ -463,6 +533,7 @@
       async function takeAction(action) {
         if (busy || !action) return;
         // history isn't updated until a turn succeeds, so retrying replays the same turn.
+        pendingAction = action;
         lastTurn = () => requestStory({ history, action });
         await runTurn("The story unfolds…");
       }
@@ -483,12 +554,33 @@
 
       function applyTurn(data) {
         history = data.history || history;
-        renderScene(data.scene, data.choices);
+        appendScene(data.scene, pendingAction);
+        pendingAction = null;
+        renderChoices(data.choices);
       }
 
       // ---- Rendering ----
-      function renderScene(scene, choices) {
-        storyEl.textContent = scene;
+      // Appends the new scene (and the action that led to it) to the growing tale,
+      // keeping everything that came before.
+      function appendScene(scene, action) {
+        let firstNew;
+        if (action) {
+          const taken = document.createElement("p");
+          taken.className = "action-taken";
+          taken.textContent = "❯ " + action;
+          storyEl.appendChild(taken);
+          firstNew = taken;
+        }
+        const p = document.createElement("p");
+        p.className = "scene";
+        p.textContent = scene;
+        storyEl.appendChild(p);
+        if (!firstNew) firstNew = p;
+        // Bring the start of the new turn into view; older text stays above to scroll back to.
+        firstNew.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+
+      function renderChoices(choices) {
         choicesEl.innerHTML = "";
         choices.forEach((choice, i) => {
           const btn = document.createElement("button");
@@ -497,7 +589,6 @@
           btn.addEventListener("click", () => takeAction(choice));
           choicesEl.appendChild(btn);
         });
-        storyEl.scrollIntoView({ behavior: "smooth", block: "start" });
       }
 
       function renderError(message) {
@@ -531,8 +622,42 @@
       }
 
       function showScreen(which) {
+        passwordScreen.classList.toggle("hidden", which !== "password");
         startScreen.classList.toggle("hidden", which !== "start");
         gameScreen.classList.toggle("hidden", which !== "game");
+      }
+
+      // ---- Password gate ----
+      async function tryLogin(pw) {
+        try {
+          const res = await fetch("/api/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ password: pw }),
+          });
+          return res.ok;
+        } catch {
+          return false;
+        }
+      }
+
+      async function init() {
+        try {
+          const cfg = await fetch("/api/config").then((r) => r.json());
+          if (!cfg.passwordRequired) {
+            showScreen("start"); // no gate configured
+            return;
+          }
+          // Gate is on: reuse a remembered password, else ask for it.
+          if (appPassword && (await tryLogin(appPassword))) {
+            showScreen("start");
+          } else {
+            showScreen("password");
+          }
+        } catch {
+          // If we can't reach the server (e.g. the static preview), just show the menu.
+          showScreen("start");
+        }
       }
 
       function escapeHtml(str) {
@@ -567,6 +692,26 @@
         customThemeInput.value = "";
         showScreen("start");
       });
+
+      passwordForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const pw = passwordInput.value;
+        if (!pw) return;
+        passwordError.textContent = "Checking…";
+        if (await tryLogin(pw)) {
+          appPassword = pw;
+          sessionStorage.setItem("plotweave_pw", pw);
+          passwordError.textContent = "";
+          passwordInput.value = "";
+          showScreen("start");
+        } else {
+          passwordError.textContent = "Incorrect password — try again.";
+          passwordInput.select();
+        }
+      });
+
+      // Decide which screen to show first (password gate or straight to the menu).
+      init();
 
       // ---- Drifting golden embers on the background ----
       (function () {

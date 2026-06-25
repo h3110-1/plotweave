@@ -15,6 +15,12 @@ app.use(express.static(path.join(__dirname, "public")));
 // errors with backoff before giving up, so brief server hiccups self-heal.
 const client = new Anthropic({ maxRetries: 4 });
 
+// Optional shared password. When set (in .env locally, or in your host's
+// environment variables once deployed), the game is locked: every story
+// request must carry the matching password, so only people you give it to
+// can spend your API credit. Leave it unset to run the game open.
+const APP_PASSWORD = process.env.APP_PASSWORD || "";
+
 const MODEL = "claude-opus-4-8";
 
 // Remove stray HTML tags the model may occasionally emit, and tidy whitespace.
@@ -58,8 +64,25 @@ const STORY_SCHEMA = {
   additionalProperties: false,
 };
 
+// Lets the browser know whether to show the password screen.
+app.get("/api/config", (req, res) => {
+  res.json({ passwordRequired: Boolean(APP_PASSWORD) });
+});
+
+// Checks a password without starting a game (used by the login screen).
+app.post("/api/login", (req, res) => {
+  if (!APP_PASSWORD) return res.json({ ok: true }); // gate disabled
+  if ((req.body?.password ?? "") === APP_PASSWORD) return res.json({ ok: true });
+  return res.status(401).json({ ok: false, error: "Incorrect password." });
+});
+
 app.post("/api/story", async (req, res) => {
   try {
+    // Password gate: reject any story request without the right password.
+    if (APP_PASSWORD && req.get("x-app-password") !== APP_PASSWORD) {
+      return res.status(401).json({ error: "Wrong or missing password." });
+    }
+
     if (!process.env.ANTHROPIC_API_KEY) {
       return res.status(401).json({
         error:
@@ -137,5 +160,12 @@ app.listen(PORT, () => {
       "\n⚠  ANTHROPIC_API_KEY is not set. Create a .env file with your key before playing.\n",
     );
   }
-  console.log(`\n🗺  Pick Your Path Adventure running at http://localhost:${PORT}\n`);
+  if (APP_PASSWORD) {
+    console.log("🔒 Password protection is ON — players need the password to play.");
+  } else {
+    console.warn(
+      "🔓 No APP_PASSWORD set — the game is OPEN to anyone who can reach it (your key, your bill).",
+    );
+  }
+  console.log(`\n🗺  Plotweave running at http://localhost:${PORT}\n`);
 });
