@@ -1141,21 +1141,39 @@
         renderCharPanel();
         // Easter egg: anyone named "Raph" gets stuck on a brutal climbing wall,
         // no matter the chosen theme.
-        const isRaph = character.name.trim().toLowerCase() === "raph";
+        const lowerName = character.name.trim().toLowerCase();
+        const isRaph = lowerName === "raph";
+        const isAce = lowerName === "ace";
         raphFallPending = isRaph; // arm the scripted fall for Raph's first action
         raphAlexPending = false; // the Alex beat is armed after the fall
-        const userMsg = isRaph
-          ? `Begin a brand new adventure. IGNORE any theme or setting — the entire ` +
+        let userMsg;
+        if (isRaph) {
+          userMsg =
+            `Begin a brand new adventure. IGNORE any theme or setting — the entire ` +
             `story takes place on a single, extremely difficult indoor rock-climbing ` +
             `wall. The player character is ${character.name}, a climber clinging to the ` +
             `wall: utterly exhausted, forearms burning and trembling, almost at the very ` +
             `top after a gruelling ascent, with the final holds tantalisingly just out of ` +
             `reach. Establish this vividly with a fitting starting inventory (climbing ` +
-            `gear), then write the opening scene and the first three choices.`
-          : `Begin a brand new adventure with this theme or setting: "${theme}". ` +
+            `gear), then write the opening scene and the first three choices.`;
+        } else if (isAce) {
+          userMsg =
+            `Begin a brand new adventure. IGNORE any theme or setting — the entire story ` +
+            `takes place at Brine Leas (${character.name}'s school), which has just ` +
+            `brought in mandatory phone pouches: lockable pouches that every student must ` +
+            `seal their phone inside for the whole school day. The player character is ` +
+            `${character.name}, a student who has just taken his phone back out of its ` +
+            `pouch to message his mum, and been caught in the act by a teacher named Mr ` +
+            `Whitehead — he is now in trouble and facing the consequences. Establish this ` +
+            `vividly with a fitting starting inventory (school bag, his phone, the opened ` +
+            `pouch, etc.), then write the opening scene and the first three choices.`;
+        } else {
+          userMsg =
+            `Begin a brand new adventure with this theme or setting: "${theme}". ` +
             `The player character is ${character.name}, a ${character.role}. ` +
             "Establish them in the world with a fitting starting inventory and health, " +
             "then write the opening scene and the first three choices.";
+        }
         lastTurn = () => streamStory(userMsg);
         await runTurn();
       }
