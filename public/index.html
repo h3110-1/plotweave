@@ -157,6 +157,7 @@
       }
 
       .theme-card {
+        position: relative;
         display: flex;
         align-items: center;
         gap: 12px;
@@ -176,6 +177,74 @@
         border-color: var(--gold);
         background: #2c251b;
         box-shadow: 0 6px 22px rgba(201, 162, 90, 0.18);
+      }
+
+      .theme-card.selected {
+        border-color: var(--gold-bright);
+        background: #332a1d;
+        box-shadow: inset 0 0 0 1px var(--gold), 0 6px 22px rgba(201, 162, 90, 0.22);
+      }
+
+      .theme-card.selected::after {
+        content: "✓";
+        position: absolute;
+        top: 7px;
+        right: 11px;
+        font-size: 0.95rem;
+        color: var(--gold-bright);
+      }
+
+      /* Primary "begin" button for the selected genre blend. */
+      .begin-adventure {
+        display: block;
+        width: 100%;
+        margin: 0 0 1.1rem;
+        padding: 14px 22px;
+        font-family: "Cinzel", serif;
+        font-size: 1.05rem;
+        letter-spacing: 0.04em;
+        color: #1a150e;
+        background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+        border: none;
+        border-radius: 10px;
+        cursor: pointer;
+        transition: filter 0.15s ease, opacity 0.2s ease;
+      }
+
+      .begin-adventure:hover:not(:disabled) {
+        filter: brightness(1.08);
+      }
+
+      .begin-adventure:disabled {
+        opacity: 0.45;
+        cursor: default;
+        color: #3a3024;
+      }
+
+      .theme-hint.warn {
+        color: var(--ember);
+      }
+
+      /* "or" divider between the genre blend and the custom-theme box. */
+      .or-divider {
+        display: flex;
+        align-items: center;
+        text-align: center;
+        color: var(--ink-soft);
+        font-style: italic;
+        margin: 0.2rem 0 1rem;
+      }
+
+      .or-divider::before,
+      .or-divider::after {
+        content: "";
+        flex: 1;
+        height: 1px;
+        background: var(--line);
+      }
+
+      .or-divider span {
+        padding: 0 12px;
       }
 
       .theme-icon {
@@ -385,7 +454,7 @@
         <h1 class="title">Plotweave</h1>
         <p class="subtitle">An adventure written as you play.</p>
 
-        <p class="prompt-label">Choose a setting, or invent your own:</p>
+        <p id="theme-hint" class="prompt-label">Pick 1–3 genres to blend — or invent your own:</p>
         <div id="theme-grid" class="theme-grid">
           <button class="theme-card" data-theme="High fantasy — ancient kingdoms, dragons, and forgotten magic">
             <span class="theme-icon">🏰</span><span>High Fantasy</span>
@@ -425,11 +494,17 @@
           </button>
         </div>
 
+        <button id="begin-selected" class="begin-adventure" disabled>
+          Pick a genre to begin
+        </button>
+
+        <div class="or-divider"><span>or</span></div>
+
         <form id="custom-theme-form" class="custom-theme">
           <input
             id="custom-theme-input"
             type="text"
-            placeholder="…or type your own theme and press Begin"
+            placeholder="Type your own theme or mashup…"
             autocomplete="off"
           />
           <button type="submit" class="begin-btn">Begin ▸</button>
@@ -477,6 +552,8 @@
       const choicesEl = document.getElementById("choices");
 
       const themeGrid = document.getElementById("theme-grid");
+      const themeHint = document.getElementById("theme-hint");
+      const beginSelected = document.getElementById("begin-selected");
       const customThemeForm = document.getElementById("custom-theme-form");
       const customThemeInput = document.getElementById("custom-theme-input");
 
@@ -666,10 +743,69 @@
         return div.innerHTML;
       }
 
+      // ---- Theme selection (blend up to 3 genres) ----
+      const MAX_THEMES = 3;
+      const DEFAULT_HINT = "Pick 1–3 genres to blend — or invent your own:";
+      let selection = []; // selected card elements, in pick order
+      let hintTimer;
+
+      function updateBeginButton() {
+        const n = selection.length;
+        beginSelected.disabled = n === 0;
+        beginSelected.textContent =
+          n === 0
+            ? "Pick a genre to begin"
+            : n === 1
+              ? "Begin Adventure ▸"
+              : `Blend ${n} genres ▸`;
+      }
+
+      function clearSelection() {
+        selection.forEach((c) => c.classList.remove("selected"));
+        selection = [];
+        themeHint.textContent = DEFAULT_HINT;
+        themeHint.classList.remove("warn");
+        updateBeginButton();
+      }
+
+      function combinedTheme(list) {
+        if (list.length === 1) return list[0];
+        return (
+          "A single, cohesive story that blends these genres into one world: " +
+          list.join("  +  ") +
+          ". Weave them together seamlessly rather than treating them as separate settings."
+        );
+      }
+
       // ---- Event wiring ----
       themeGrid.addEventListener("click", (e) => {
         const card = e.target.closest(".theme-card");
-        if (card) startAdventure(card.dataset.theme);
+        if (!card) return;
+        const idx = selection.indexOf(card);
+        if (idx >= 0) {
+          selection.splice(idx, 1);
+          card.classList.remove("selected");
+        } else if (selection.length >= MAX_THEMES) {
+          themeHint.textContent = "You can blend up to 3 — deselect one first.";
+          themeHint.classList.add("warn");
+          clearTimeout(hintTimer);
+          hintTimer = setTimeout(() => {
+            themeHint.textContent = DEFAULT_HINT;
+            themeHint.classList.remove("warn");
+          }, 1800);
+          return;
+        } else {
+          selection.push(card);
+          card.classList.add("selected");
+        }
+        updateBeginButton();
+      });
+
+      beginSelected.addEventListener("click", () => {
+        if (!selection.length) return;
+        const themes = selection.map((c) => c.dataset.theme);
+        clearSelection();
+        startAdventure(combinedTheme(themes));
       });
 
       customThemeForm.addEventListener("submit", (e) => {
@@ -690,6 +826,7 @@
       restartBtn.addEventListener("click", () => {
         if (busy) return;
         customThemeInput.value = "";
+        clearSelection();
         showScreen("start");
       });
 
