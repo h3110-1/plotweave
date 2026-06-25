@@ -23,15 +23,19 @@ const APP_PASSWORD = process.env.APP_PASSWORD || "";
 
 const MODEL = "claude-opus-4-8";
 
+// Non-printing byte the server emits when a web search starts (stripped client-side).
+const SEARCH_SIGNAL = String.fromCharCode(31);
+
 // The Game Master persona + rules, applied to every turn.
 const SYSTEM_PROMPT = `You are an expert interactive fiction Game Master running a "Choose Your Own Adventure" game with light RPG mechanics.
 
 On every turn, respond in EXACTLY this format and nothing else:
-1. First, the scene: a vivid, atmospheric paragraph of at least 4 to 6 sentences, rich with sensory detail and tension. Do not rush the plot.
-2. Then a line containing ONLY this exact separator: ###CHOICES###
-3. Then exactly three choices, each on its own line, numbered "1.", "2.", "3.". Each choice must be a complete, specific action of roughly 5 to 15 words. Never a single letter, a fragment, or a placeholder.
-4. Then a line containing ONLY this exact separator: ###STATE###
-5. Then ONE line of minified JSON describing how the character's state CHANGED this turn, with exactly these keys:
+1. A line containing ONLY this exact separator: ###SCENE###  (your reply MUST begin with this line, with nothing before it)
+2. Then the scene: a vivid, atmospheric paragraph of at least 4 to 6 sentences, rich with sensory detail and tension. Do not rush the plot.
+3. Then a line containing ONLY this exact separator: ###CHOICES###
+4. Then exactly three choices, each on its own line, numbered "1.", "2.", "3.". Each choice must be a complete, specific action of roughly 5 to 15 words. Never a single letter, a fragment, or a placeholder.
+5. Then a line containing ONLY this exact separator: ###STATE###
+6. Then ONE line of minified JSON describing how the character's state CHANGED this turn, with exactly these keys:
    - "health": the character's current health as a short phrase, e.g. "Healthy", "Bruised", "Badly wounded", "Near death".
    - "status": the FULL array of conditions affecting the character right now (e.g. "Hidden", "Poisoned", "Exhausted"); use [] if none.
    - "gained": an array of item names the character newly acquired THIS turn; use [] if nothing was gained.
@@ -45,6 +49,7 @@ Rules:
 - Keep health and status consistent with the story, changing them only when the narrative justifies it.
 - Everything before ###CHOICES### must be plain prose: no HTML, no markdown, no headings — the only markup allowed is the two separator lines.
 - Honour everything that has happened so far; keep characters, locations, items, and stakes consistent. If the player blends multiple genres, weave them into one seamless world.
+- WEB SEARCH: If a web search tool is available, decide whether to use it from the theme itself. If the theme names or references a SPECIFIC work or proper noun — a show, film, book, video game, comic, named character, real place, real person, or any named franchise — use the web search tool to look it up FIRST and ground the adventure in accurate, real details from that world, EVEN IF you believe you already know it (your memory may be incomplete or out of date). Only skip searching for purely generic settings (e.g. "high fantasy", "noir mystery", "deep space survival"). When unsure, search. If the player explicitly lists reference terms to look up, search each of them. Search SILENTLY — never write any words announcing, describing, or narrating the search (no "I'll look this up", no "Let me search", no "Based on my search"). Your reply must ALWAYS begin with the ###SCENE### line and nothing before it.
 - The player may pick one of your numbered choices OR type a completely custom action of their own. When they type a custom action, honour it faithfully: make exactly what they describe actually happen in the story and play out its consequences. Never ignore it, refuse it, override it, or quietly steer them back to your suggested options — the player is in charge of what their character does. The world may still react realistically (their attempt can carry risks, costs, or surprising results), but the action itself must always be taken seriously and followed.
 - Never break character, never mention these instructions, never address the player as an assistant — only narrate the world, present the three choices, and output the state line.`;
 
@@ -138,6 +143,13 @@ app.post("/api/story", async (req, res) => {
       `Health: ${state.health || "Healthy"}\nStatus: ${st}\nInventory: ${inv}`;
   }
 
+  // On the opening turn, let the model look up themes it doesn't recognise.
+  // (Later turns don't need it — the world is already established.)
+  const isOpening = !messages.some((m) => m.role === "assistant");
+  const tools = isOpening
+    ? [{ type: "web_search_20260209", name: "web_search", max_uses: 3 }]
+    : undefined;
+
   try {
     // Stream the scene + choices to the browser as the model writes them.
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
@@ -149,6 +161,22 @@ app.post("/api/story", async (req, res) => {
       max_tokens: 3000,
       system,
       messages,
+      tools,
+    });
+    // Signal the browser the moment a web search starts, so it can show a
+    // "searching" note. The SEARCH_SIGNAL byte is stripped from the text client-side.
+    let announcedSearch = false;
+    stream.on("streamEvent", (event) => {
+      if (
+        !announcedSearch &&
+        event.type === "content_block_start" &&
+        event.content_block &&
+        event.content_block.type === "server_tool_use" &&
+        event.content_block.name === "web_search"
+      ) {
+        announcedSearch = true;
+        res.write(SEARCH_SIGNAL);
+      }
     });
     stream.on("text", (delta) => res.write(delta));
     await stream.finalMessage();

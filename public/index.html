@@ -557,6 +557,19 @@
         margin: 0 0 1.4rem;
       }
 
+      /* Shown while the model searches the web to ground an unfamiliar theme. */
+      .researching {
+        margin: 0 0 1.1rem;
+        color: var(--gold);
+        font-style: italic;
+        animation: pulse 1.4s ease-in-out infinite;
+      }
+
+      @keyframes pulse {
+        0%, 100% { opacity: 0.5; }
+        50% { opacity: 1; }
+      }
+
       /* The action the player took, shown above the scene it led to. */
       .action-taken {
         margin: 1.9rem 0 0.9rem;
@@ -991,8 +1004,10 @@
       let raphAlexPending = false; // Raph easter egg: scripted Alex climb on the next action
 
       // ---- Story streaming ----
+      const DELIM_SCENE = "###SCENE###";
       const DELIM_CHOICES = "###CHOICES###";
       const DELIM_STATE = "###STATE###";
+      const SEARCH_MARK = String.fromCharCode(31); // server's "web search started" signal
       let currentTurnEls = []; // DOM nodes for the in-progress turn (removed on failure)
 
       // Strip stray tags / collapse spaces, but keep paragraph newlines.
@@ -1168,10 +1183,21 @@
             `vividly with a fitting starting inventory (school bag, his phone, the opened ` +
             `pouch, etc.), then write the opening scene and the first three choices.`;
         } else {
+          // Anything the player put in quotes becomes an explicit term to look up.
+          const quoted = (theme.match(/["'“”‘’]([^"'“”‘’]{2,}?)["'“”‘’]/g) || [])
+            .map((q) => q.replace(/["'“”‘’]/g, "").trim())
+            .filter(Boolean);
+          const lookups = quoted.length
+            ? ` The player has explicitly named these references — use the web search ` +
+              `tool to look each one up before writing: ${quoted
+                .map((q) => `"${q}"`)
+                .join(", ")}.`
+            : "";
           userMsg =
             `Begin a brand new adventure with this theme or setting: "${theme}". ` +
-            `The player character is ${character.name}, a ${character.role}. ` +
-            "Establish them in the world with a fitting starting inventory and health, " +
+            `The player character is ${character.name}, a ${character.role}.` +
+            lookups +
+            ` Establish them in the world with a fitting starting inventory and health, ` +
             "then write the opening scene and the first three choices.";
         }
         lastTurn = () => streamStory(userMsg);
@@ -1283,9 +1309,25 @@
         let sceneTarget = ""; // scene text received so far (the reveal's goal)
         let sceneComplete = false; // ###CHOICES### reached → scene fully received
         let shown = 0; // characters revealed so far (fractional accumulator)
-        // Reveal speed in characters per frame (~60fps → ~90 chars/sec), kept below
-        // the model's generation rate so it never catches up and stalls.
-        const CHARS_PER_FRAME = 1.5;
+        const CHARS_PER_FRAME = 1.5; // reveal speed; below generation so it never stalls
+
+        // "Searching the web" note, shown while the model runs a web search.
+        let researchEl = null;
+        const showResearching = () => {
+          if (researchEl) return;
+          researchEl = document.createElement("p");
+          researchEl.className = "researching";
+          researchEl.textContent = "🔎 Searching the web for references…";
+          storyEl.insertBefore(researchEl, sceneEl);
+          currentTurnEls.push(researchEl);
+        };
+        const hideResearching = () => {
+          if (!researchEl) return;
+          researchEl.remove();
+          const at = currentTurnEls.indexOf(researchEl);
+          if (at !== -1) currentTurnEls.splice(at, 1);
+          researchEl = null;
+        };
 
         const typingDone = new Promise((resolve) => {
           function tick() {
@@ -1306,28 +1348,46 @@
           const { done, value } = await reader.read();
           if (done) break;
           full += decoder.decode(value, { stream: true });
-          const idx = full.indexOf(DELIM_CHOICES);
-          if (idx === -1) {
-            sceneTarget = tidyLive(full);
-          } else if (!sceneComplete) {
-            sceneTarget = tidy(full.slice(0, idx));
-            sceneComplete = true;
+          const clean = full.split(SEARCH_MARK).join(""); // drop the search signal
+          const s = clean.indexOf(DELIM_SCENE);
+          const c = clean.indexOf(DELIM_CHOICES);
+          if (s !== -1) {
+            // Scene text lives after ###SCENE### — anything before it is discarded.
+            const start = s + DELIM_SCENE.length;
+            if (c === -1) {
+              sceneTarget = tidyLive(clean.slice(start));
+            } else if (!sceneComplete) {
+              sceneTarget = tidy(clean.slice(start, c));
+              sceneComplete = true;
+            }
           }
+          // Show the note while a search ran but the scene hasn't started yet.
+          if (full.includes(SEARCH_MARK) && !sceneTarget) showResearching();
+          else hideResearching();
         }
-        if (!sceneComplete) {
-          // Stream ended without the separator — treat all of it as the scene.
-          const i = full.indexOf(DELIM_CHOICES);
-          sceneTarget = tidy(i === -1 ? full : full.slice(0, i));
-          sceneComplete = true;
+
+        const cleanFull = full.split(SEARCH_MARK).join("");
+        const idxScene = cleanFull.indexOf(DELIM_SCENE);
+        const idxC = cleanFull.indexOf(DELIM_CHOICES);
+        const sceneStart = idxScene === -1 ? 0 : idxScene + DELIM_SCENE.length;
+        let sceneRaw =
+          idxC === -1 ? cleanFull.slice(sceneStart) : cleanFull.slice(sceneStart, idxC);
+        if (idxScene === -1) {
+          // Fallback: model skipped ###SCENE### — strip a leading "searching" preamble.
+          sceneRaw = sceneRaw.replace(
+            /^\s*(?:I['’]?ll|I will|I['’]m going to|Let me|Based on|I['’]ve)\b[^.!?]*?(?:search|look|ground|research|find)[^.!?]*[.!?]\s*/i,
+            "",
+          );
         }
+        const scene = tidy(sceneRaw);
+        sceneTarget = scene; // ensure the typewriter finishes on the clean final text
+        sceneComplete = true;
+        hideResearching();
         await typingDone; // let the reveal finish before showing the choices
 
-        // Finalise scene, choices, and character state.
-        const idxC = full.indexOf(DELIM_CHOICES);
-        const scene = tidy(idxC === -1 ? full : full.slice(0, idxC));
         sceneEl.textContent = scene; // clean, fully-revealed text (no fade spans)
 
-        let afterChoices = idxC === -1 ? "" : full.slice(idxC + DELIM_CHOICES.length);
+        let afterChoices = idxC === -1 ? "" : cleanFull.slice(idxC + DELIM_CHOICES.length);
         let stateText = "";
         const idxS = afterChoices.indexOf(DELIM_STATE);
         if (idxS !== -1) {
