@@ -310,6 +310,24 @@
         margin: 0 0 1.4rem;
       }
 
+      /* Blinking cursor shown at the end of a scene while it streams in. */
+      .scene.streaming::after {
+        content: "▋";
+        margin-left: 1px;
+        color: var(--gold);
+        animation: caret 1s step-end infinite;
+      }
+
+      @keyframes caret {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0;
+        }
+      }
+
       /* The action the player took, shown above the scene it led to. */
       .action-taken {
         margin: 1.9rem 0 0.9rem;
@@ -570,29 +588,38 @@
       let appPassword = sessionStorage.getItem("plotweave_pw") || ""; // gate password
       let pendingAction = null; // the action that triggered the in-flight turn
 
-      // ---- Networking ----
-      async function requestStory(payload) {
-        const res = await fetch("/api/story", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-app-password": appPassword,
-          },
-          body: JSON.stringify(payload),
-        });
-        if (res.status === 401) {
-          // Password missing/changed — send the player back to the login screen.
-          sessionStorage.removeItem("plotweave_pw");
-          appPassword = "";
-          showScreen("password");
-          passwordError.textContent = "Please enter the password again.";
-          throw new Error("Password required.");
+      // ---- Story streaming ----
+      const DELIM = "###CHOICES###";
+      let currentTurnEls = []; // DOM nodes for the in-progress turn (removed on failure)
+
+      // Strip stray tags / collapse spaces, but keep paragraph newlines.
+      function tidy(s) {
+        return s.replace(/<[^>]+>/g, " ").replace(/[ \t]+/g, " ").trim();
+      }
+
+      // While streaming, hide a half-arrived "###CHOICES###" separator at the tail.
+      function tidyLive(s) {
+        return s
+          .replace(/#+\s*C?H?O?I?C?E?S?\s*#*\s*$/i, "")
+          .replace(/<[^>]+>/g, " ")
+          .trimEnd();
+      }
+
+      function parseChoices(text) {
+        const choices = text
+          .split(/\n+/)
+          .map((l) => tidy(l.replace(/^\s*(?:\d+[.)\-:]|[-*•])\s*/, "")))
+          .filter((c) => c.replace(/[^a-zA-Z]/g, "").length >= 4)
+          .slice(0, 3);
+        while (choices.length < 3) {
+          choices.push("Press onward into whatever comes next.");
         }
-        if (!res.ok) {
-          const { error } = await res.json().catch(() => ({}));
-          throw new Error(error || "Something went wrong.");
-        }
-        return res.json();
+        return choices;
+      }
+
+      function removeCurrentTurnEls() {
+        currentTurnEls.forEach((el) => el.remove());
+        currentTurnEls = [];
       }
 
       // ---- Turn handling ----
@@ -602,59 +629,110 @@
         showScreen("game");
         storyEl.innerHTML = ""; // fresh tale
         choicesEl.innerHTML = "";
+        currentTurnEls = [];
         pendingAction = null;
-        lastTurn = () => requestStory({ history: [], theme });
-        await runTurn("Setting the stage…");
+        const userMsg =
+          `Begin a brand new adventure with this theme or setting: "${theme}". ` +
+          "Write the opening scene and the first three choices.";
+        lastTurn = () => streamStory(userMsg);
+        await runTurn();
       }
 
       async function takeAction(action) {
         if (busy || !action) return;
-        // history isn't updated until a turn succeeds, so retrying replays the same turn.
+        // history isn't committed until a turn succeeds, so retrying replays the same turn.
         pendingAction = action;
-        lastTurn = () => requestStory({ history, action });
-        await runTurn("The story unfolds…");
+        const userMsg = `The player chooses: ${action}`;
+        lastTurn = () => streamStory(userMsg);
+        await runTurn();
       }
 
-      async function runTurn(loadingText) {
+      async function runTurn() {
         if (!lastTurn) return;
         clearError();
-        setLoading(true, loadingText);
+        setBusy(true);
         try {
-          const data = await lastTurn();
-          applyTurn(data);
+          await lastTurn();
         } catch (err) {
+          removeCurrentTurnEls();
           renderError(err.message);
         } finally {
-          setLoading(false);
+          setBusy(false);
         }
       }
 
-      function applyTurn(data) {
-        history = data.history || history;
-        appendScene(data.scene, pendingAction);
-        pendingAction = null;
-        renderChoices(data.choices);
-      }
+      // Streams one scene into the page word-by-word, then renders the choices.
+      async function streamStory(userMsg) {
+        removeCurrentTurnEls(); // clear any partial leftover from a failed attempt
+        const messages = [...history, { role: "user", content: userMsg }];
 
-      // ---- Rendering ----
-      // Appends the new scene (and the action that led to it) to the growing tale,
-      // keeping everything that came before.
-      function appendScene(scene, action) {
-        let firstNew;
-        if (action) {
+        // Build this turn's DOM up front so text can stream into it.
+        if (pendingAction) {
           const taken = document.createElement("p");
           taken.className = "action-taken";
-          taken.textContent = "❯ " + action;
+          taken.textContent = "❯ " + pendingAction;
           storyEl.appendChild(taken);
-          firstNew = taken;
+          currentTurnEls.push(taken);
         }
-        const p = document.createElement("p");
-        p.className = "scene";
-        p.textContent = scene;
-        storyEl.appendChild(p);
-        if (!firstNew) firstNew = p;
-        // Bring the start of the new turn into view; older text stays above to scroll back to.
-        firstNew.scrollIntoView({ behavior: "smooth", block: "start" });
+        const sceneEl = document.createElement("p");
+        sceneEl.className = "scene streaming"; // blinking caret while it writes
+        storyEl.appendChild(sceneEl);
+        currentTurnEls.push(sceneEl);
+        currentTurnEls[0].scrollIntoView({ behavior: "smooth", block: "start" });
+
+        const res = await fetch("/api/story", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-app-password": appPassword,
+          },
+          body: JSON.stringify({ messages }),
+        });
+
+        if (res.status === 401) {
+          // Password missing/changed — back to the login screen.
+          sessionStorage.removeItem("plotweave_pw");
+          appPassword = "";
+          removeCurrentTurnEls();
+          showScreen("password");
+          passwordError.textContent = "Please enter the password again.";
+          throw new Error("Password required.");
+        }
+        if (!res.ok || !res.body) {
+          const { error } = await res.json().catch(() => ({}));
+          throw new Error(error || "Something went wrong.");
+        }
+
+        // Read the streamed text and render it live.
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let full = "";
+        let sceneFixed = false;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          full += decoder.decode(value, { stream: true });
+          const idx = full.indexOf(DELIM);
+          if (idx === -1) {
+            sceneEl.textContent = tidyLive(full);
+            sceneEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          } else if (!sceneFixed) {
+            sceneEl.textContent = tidy(full.slice(0, idx)); // scene is complete
+            sceneFixed = true;
+          }
+        }
+
+        // Finalise scene + choices.
+        const idx = full.indexOf(DELIM);
+        const scene = tidy(idx === -1 ? full : full.slice(0, idx));
+        sceneEl.textContent = scene;
+        sceneEl.classList.remove("streaming");
+        renderChoices(parseChoices(idx === -1 ? "" : full.slice(idx + DELIM.length)));
+
+        // Commit this turn to the permanent story + history.
+        history = [...messages, { role: "assistant", content: scene }];
+        currentTurnEls = [];
+        pendingAction = null;
       }
 
       function renderChoices(choices) {
@@ -678,7 +756,7 @@
         const retry = document.createElement("button");
         retry.className = "action-btn";
         retry.textContent = "↻ Try again";
-        retry.addEventListener("click", () => runTurn("Trying again…"));
+        retry.addEventListener("click", () => runTurn());
         banner.appendChild(retry);
 
         // Insert above the choices so your existing options stay clickable too.
@@ -689,11 +767,9 @@
         document.getElementById("error-banner")?.remove();
       }
 
-      function setLoading(state, text = "The storyteller is writing…") {
+      function setBusy(state) {
         busy = state;
-        loader.querySelector("#loader-text").textContent = text;
-        loader.classList.toggle("hidden", !state);
-        // Dim the choices while waiting.
+        // Dim the controls while a scene is being written.
         choicesEl.style.opacity = state ? "0.35" : "1";
         customActionForm.style.opacity = state ? "0.35" : "1";
       }
