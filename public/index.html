@@ -699,6 +699,9 @@
       let lastTurn = null; // a function that re-runs the most recent turn (for retry)
       let appPassword = sessionStorage.getItem("plotweave_pw") || ""; // gate password
       let pendingAction = null; // the action that triggered the in-flight turn
+      let summary = ""; // running summary of older scenes (cost saver)
+      const KEEP_RECENT_TURNS = 5; // recent turns kept word-for-word
+      const SUMMARIZE_AFTER_TURNS = 9; // begin folding older turns past this length
 
       // ---- Story streaming ----
       const DELIM = "###CHOICES###";
@@ -734,10 +737,56 @@
         currentTurnEls = [];
       }
 
+      // ---- Cost saver: keep recent turns verbatim, fold older ones into a summary ----
+      function buildMessages(userMsg) {
+        const arr = [];
+        if (summary) {
+          arr.push({
+            role: "user",
+            content: `Story so far (summary of earlier events, for continuity): ${summary}`,
+          });
+        }
+        arr.push(...history);
+        arr.push({ role: "user", content: userMsg });
+        return arr;
+      }
+
+      async function requestSummary(prior, olderMessages) {
+        try {
+          const res = await fetch("/api/summarize", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-app-password": appPassword,
+            },
+            body: JSON.stringify({ summary: prior, messages: olderMessages }),
+          });
+          if (!res.ok) return prior; // on failure, keep everything verbatim and retry later
+          const data = await res.json();
+          return (data.summary || prior).trim();
+        } catch {
+          return prior;
+        }
+      }
+
+      async function maybeSummarize() {
+        const turns = history.length / 2;
+        if (turns < SUMMARIZE_AFTER_TURNS) return;
+        const keep = KEEP_RECENT_TURNS * 2;
+        const older = history.slice(0, history.length - keep);
+        const updated = await requestSummary(summary, older);
+        // Only drop the older turns once they're safely captured in the summary.
+        if (updated && updated !== summary) {
+          summary = updated;
+          history = history.slice(history.length - keep);
+        }
+      }
+
       // ---- Turn handling ----
       async function startAdventure(theme) {
         if (busy || !theme) return;
         history = [];
+        summary = "";
         showScreen("game");
         storyEl.innerHTML = ""; // fresh tale
         choicesEl.innerHTML = "";
@@ -776,7 +825,7 @@
       // Streams one scene into the page word-by-word, then renders the choices.
       async function streamStory(userMsg) {
         removeCurrentTurnEls(); // clear any partial leftover from a failed attempt
-        const messages = [...history, { role: "user", content: userMsg }];
+        const messages = buildMessages(userMsg);
 
         // Build this turn's DOM up front so text can stream into it.
         if (pendingAction) {
@@ -850,9 +899,14 @@
         renderChoices(parseChoices(idx === -1 ? "" : full.slice(idx + DELIM.length)));
 
         // Commit this turn to the permanent story + history.
-        history = [...messages, { role: "assistant", content: scene }];
+        history = [
+          ...history,
+          { role: "user", content: userMsg },
+          { role: "assistant", content: scene },
+        ];
         currentTurnEls = [];
         pendingAction = null;
+        await maybeSummarize(); // fold older turns into a summary once the story is long
       }
 
       function renderChoices(choices) {

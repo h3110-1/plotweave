@@ -49,6 +49,44 @@ app.post("/api/login", (req, res) => {
   return res.status(401).json({ ok: false, error: "Incorrect password." });
 });
 
+// Condenses older turns into a short running summary so long games stay cheap.
+// Uses the cheaper Haiku model since this is background compression, not the story.
+app.post("/api/summarize", async (req, res) => {
+  if (APP_PASSWORD && req.get("x-app-password") !== APP_PASSWORD) {
+    return res.status(401).json({ error: "Wrong or missing password." });
+  }
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return res.status(401).json({ error: "No API key configured." });
+  }
+
+  const prior = typeof req.body?.summary === "string" ? req.body.summary : "";
+  const chunk = Array.isArray(req.body?.messages) ? req.body.messages : [];
+  if (chunk.length === 0) return res.json({ summary: prior });
+
+  const transcript = chunk
+    .map((m) => (m.role === "user" ? `PLAYER: ${m.content}` : `STORY: ${m.content}`))
+    .join("\n\n");
+  const prompt =
+    (prior ? `Existing summary of the story so far:\n${prior}\n\n` : "") +
+    `New events to fold into the summary:\n${transcript}\n\n` +
+    "Write an updated, concise summary (one short paragraph) capturing the key plot, " +
+    "characters, locations, items, and unresolved threads needed to continue the story " +
+    "consistently. Output only the summary text, with no preamble.";
+
+  try {
+    const r = await client.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 600,
+      messages: [{ role: "user", content: prompt }],
+    });
+    const text = r.content.find((b) => b.type === "text")?.text ?? prior;
+    res.json({ summary: text.trim() });
+  } catch (err) {
+    console.error("Summarize failed:", err);
+    res.status(500).json({ error: "summarize failed" });
+  }
+});
+
 app.post("/api/story", async (req, res) => {
   // Pre-stream validation — we can still reply with a JSON error + status here.
   if (APP_PASSWORD && req.get("x-app-password") !== APP_PASSWORD) {
