@@ -453,6 +453,43 @@
         color: var(--gold);
       }
 
+      /* Inventory items are clickable to "use" them. */
+      .char-list li {
+        cursor: pointer;
+        border-radius: 6px;
+        transition: background 0.15s ease, color 0.15s ease;
+      }
+
+      .char-list li:hover {
+        background: #2c251b;
+        color: var(--gold-bright);
+      }
+
+      .char-list li.char-empty,
+      .char-list li.char-empty:hover {
+        cursor: default;
+        background: transparent;
+        color: var(--ink-soft);
+      }
+
+      .char-hint {
+        margin: 7px 0 0;
+        font-size: 0.72rem;
+        color: var(--ink-soft);
+        font-style: italic;
+        opacity: 0.7;
+      }
+
+      /* The fourth, item-use choice button. */
+      .choice.item-use {
+        border-left-color: var(--ember);
+        background: #2a211a;
+      }
+
+      .choice.item-use .num {
+        color: var(--ember);
+      }
+
       .char-empty {
         color: var(--ink-soft);
         font-style: italic;
@@ -844,6 +881,7 @@
           <div class="char-block">
             <span class="char-label">Inventory</span>
             <ul id="char-inventory" class="char-list"></ul>
+            <p id="char-inv-hint" class="char-hint hidden">Click an item to use it</p>
           </div>
         </aside>
 
@@ -919,6 +957,7 @@
       const charHealth = document.getElementById("char-health");
       const charStatus = document.getElementById("char-status");
       const charInventory = document.getElementById("char-inventory");
+      const charInvHint = document.getElementById("char-inv-hint");
 
       const customActionForm = document.getElementById("custom-action-form");
       const customActionInput = document.getElementById("custom-action-input");
@@ -1227,11 +1266,31 @@
           state.inventory.forEach((item) => {
             const li = document.createElement("li");
             li.textContent = item;
+            li.title = "Use this item";
+            li.addEventListener("click", () => useItem(item));
             charInventory.appendChild(li);
           });
         } else {
           charInventory.innerHTML = '<li class="char-empty">Empty</li>';
         }
+        charInvHint.classList.toggle("hidden", state.inventory.length === 0);
+      }
+
+      // Clicking an inventory item offers a fourth "use this item" choice.
+      function useItem(item) {
+        if (busy) return; // can't act mid-scene
+        addItemUseChoice(item);
+      }
+
+      function addItemUseChoice(item) {
+        choicesEl.querySelector(".choice.item-use")?.remove(); // one item-use option at a time
+        if (!choicesEl.children.length) return; // no active choices to extend yet
+        const btn = document.createElement("button");
+        btn.className = "choice item-use";
+        btn.innerHTML = `<span class="num">✦</span>${escapeHtml("Use your " + item)}`;
+        btn.addEventListener("click", () => takeAction(`Use your ${item}.`));
+        choicesEl.appendChild(btn);
+        btn.scrollIntoView({ behavior: "smooth", block: "nearest" });
       }
 
       function renderError(message) {
