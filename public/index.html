@@ -382,6 +382,18 @@
         margin-right: 12px;
       }
 
+      .game-actions {
+        display: flex;
+        gap: 12px;
+        justify-content: center;
+        flex-wrap: wrap;
+        margin-top: 1.8rem;
+      }
+
+      .game-actions .restart {
+        margin: 0;
+      }
+
       .restart {
         display: block;
         margin: 1.8rem auto 0;
@@ -444,6 +456,76 @@
 
       .error-banner .action-btn {
         padding: 9px 22px;
+      }
+
+      /* ---------- New-adventure confirmation modal ---------- */
+      .modal {
+        position: fixed;
+        inset: 0;
+        z-index: 5;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        background: rgba(10, 8, 5, 0.72);
+      }
+
+      .modal-card {
+        width: min(420px, 100%);
+        background: linear-gradient(180deg, #241f18, var(--panel));
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        box-shadow: 0 30px 70px var(--shadow);
+        padding: 26px 26px 22px;
+        text-align: center;
+        animation: rise 0.3s ease both;
+      }
+
+      .modal-title {
+        font-family: "Cinzel", serif;
+        color: var(--gold-bright);
+        margin: 0 0 0.5rem;
+        font-size: 1.4rem;
+      }
+
+      .modal-text {
+        color: var(--ink-soft);
+        margin: 0 0 1.4rem;
+      }
+
+      .modal-actions {
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+
+      .modal-btn {
+        padding: 11px 20px;
+        font-family: "Cinzel", serif;
+        font-size: 0.95rem;
+        letter-spacing: 0.03em;
+        color: #1a150e;
+        background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+        border: none;
+        border-radius: 9px;
+        cursor: pointer;
+        transition: filter 0.15s ease, color 0.2s ease, border-color 0.2s ease;
+      }
+
+      .modal-btn:hover {
+        filter: brightness(1.08);
+      }
+
+      .modal-btn.ghost {
+        color: var(--ink-soft);
+        background: transparent;
+        border: 1px solid var(--line);
+      }
+
+      .modal-btn.ghost:hover {
+        color: var(--ink);
+        border-color: var(--gold);
       }
     </style>
   </head>
@@ -545,13 +627,28 @@
           <button type="submit" class="action-btn">Act ▸</button>
         </form>
 
-        <button id="restart-btn" class="restart">⟲ New Adventure</button>
+        <div class="game-actions">
+          <button id="copy-btn" class="restart">⧉ Copy story</button>
+          <button id="restart-btn" class="restart">⟲ New Adventure</button>
+        </div>
       </section>
 
       <!-- Loading indicator -->
       <div id="loader" class="loader hidden">
         <div class="quill">🖋️</div>
         <p id="loader-text">The storyteller is writing…</p>
+      </div>
+
+      <!-- New-adventure confirmation -->
+      <div id="confirm-modal" class="modal hidden">
+        <div class="modal-card">
+          <h2 class="modal-title">Start a new adventure?</h2>
+          <p class="modal-text">This will erase your current story for good.</p>
+          <div class="modal-actions">
+            <button id="confirm-cancel" class="modal-btn ghost">Keep playing</button>
+            <button id="confirm-new" class="modal-btn">Erase &amp; start new</button>
+          </div>
+        </div>
       </div>
     </main>
 
@@ -578,6 +675,10 @@
       const customActionForm = document.getElementById("custom-action-form");
       const customActionInput = document.getElementById("custom-action-input");
       const restartBtn = document.getElementById("restart-btn");
+      const copyBtn = document.getElementById("copy-btn");
+      const confirmModal = document.getElementById("confirm-modal");
+      const confirmNew = document.getElementById("confirm-new");
+      const confirmCancel = document.getElementById("confirm-cancel");
 
       // ---- Game state ----
       // The full conversation history is kept here and round-tripped to the server,
@@ -899,11 +1000,67 @@
         }
       });
 
-      restartBtn.addEventListener("click", () => {
-        if (busy) return;
+      function startNewAdventure() {
+        confirmModal.classList.add("hidden");
         customThemeInput.value = "";
         clearSelection();
         showScreen("start");
+      }
+
+      restartBtn.addEventListener("click", () => {
+        if (busy) return;
+        // Only ask once the player has progressed past the opening scene.
+        const sceneCount = storyEl.querySelectorAll(".scene").length;
+        if (sceneCount >= 2) {
+          confirmModal.classList.remove("hidden");
+        } else {
+          startNewAdventure();
+        }
+      });
+
+      // ---- Copy the whole story to the clipboard ----
+      async function copyText(text) {
+        try {
+          if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+            return true;
+          }
+        } catch {
+          /* fall through to the textarea fallback */
+        }
+        try {
+          const ta = document.createElement("textarea");
+          ta.value = text;
+          ta.style.position = "fixed";
+          ta.style.opacity = "0";
+          document.body.appendChild(ta);
+          ta.select();
+          const ok = document.execCommand("copy");
+          ta.remove();
+          return ok;
+        } catch {
+          return false;
+        }
+      }
+
+      copyBtn.addEventListener("click", async () => {
+        const text = storyEl.innerText.trim(); // all scenes + actions, as shown
+        if (!text) return;
+        const ok = await copyText(text);
+        copyBtn.textContent = ok ? "✓ Copied!" : "Couldn't copy";
+        setTimeout(() => (copyBtn.textContent = "⧉ Copy story"), 1600);
+      });
+
+      confirmNew.addEventListener("click", startNewAdventure);
+      confirmCancel.addEventListener("click", () =>
+        confirmModal.classList.add("hidden"),
+      );
+      // Dismiss by clicking the dark backdrop or pressing Escape.
+      confirmModal.addEventListener("click", (e) => {
+        if (e.target === confirmModal) confirmModal.classList.add("hidden");
+      });
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") confirmModal.classList.add("hidden");
       });
 
       passwordForm.addEventListener("submit", async (e) => {
