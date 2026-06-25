@@ -1001,6 +1001,24 @@
           .trimEnd();
       }
 
+      // Paint the first n characters of `text` into `el`, fading in the newest few
+      // so the reveal glides rather than snaps.
+      function paintScene(el, text, n) {
+        const FADE = 8;
+        const cut = Math.max(0, n - FADE);
+        el.textContent = text.slice(0, cut); // bulk shown text as one fast text node
+        const tail = text.slice(cut, n);
+        for (let i = 0; i < tail.length; i++) {
+          const span = document.createElement("span");
+          span.textContent = tail[i];
+          span.style.opacity = (
+            0.2 +
+            0.8 * ((tail.length - i) / tail.length)
+          ).toFixed(2);
+          el.appendChild(span);
+        }
+      }
+
       function parseChoices(text) {
         const choices = text
           .split(/\n+/)
@@ -1180,29 +1198,58 @@
           throw new Error(error || "Something went wrong.");
         }
 
-        // Read the streamed text and render it live.
+        // Stream the text in, but reveal it smoothly at a steady cadence —
+        // decoupled from the bursty network chunks — with a fading leading edge.
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let full = "";
-        let sceneFixed = false;
+        let sceneTarget = ""; // scene text received so far (the typewriter's goal)
+        let sceneComplete = false; // ###CHOICES### reached → scene fully received
+        let shown = 0; // characters revealed so far (fractional accumulator)
+        // Reveal speed in characters per frame (~60fps → ~90 chars/sec). Kept
+        // deliberately below the model's generation rate so the typewriter always
+        // has a buffer ahead of it and never catches up and stalls.
+        const CHARS_PER_FRAME = 1.5;
+
+        const typingDone = new Promise((resolve) => {
+          function tick() {
+            if (!sceneEl.isConnected) return resolve(); // turn removed (error/retry)
+            const target = sceneTarget.length;
+            if (shown < target) {
+              shown = Math.min(target, shown + CHARS_PER_FRAME);
+              paintScene(sceneEl, sceneTarget, Math.floor(shown));
+              sceneEl.scrollIntoView({ block: "nearest" });
+            }
+            if (sceneComplete && shown >= target) resolve();
+            else requestAnimationFrame(tick);
+          }
+          requestAnimationFrame(tick);
+        });
+
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
           full += decoder.decode(value, { stream: true });
           const idx = full.indexOf(DELIM_CHOICES);
           if (idx === -1) {
-            sceneEl.textContent = tidyLive(full);
-            sceneEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
-          } else if (!sceneFixed) {
-            sceneEl.textContent = tidy(full.slice(0, idx)); // scene is complete
-            sceneFixed = true;
+            sceneTarget = tidyLive(full);
+          } else if (!sceneComplete) {
+            sceneTarget = tidy(full.slice(0, idx));
+            sceneComplete = true;
           }
         }
+        if (!sceneComplete) {
+          // Stream ended without the separator — treat all of it as the scene.
+          const i = full.indexOf(DELIM_CHOICES);
+          sceneTarget = tidy(i === -1 ? full : full.slice(0, i));
+          sceneComplete = true;
+        }
+        await typingDone; // let the typewriter finish before showing the choices
 
         // Finalise scene, choices, and character state.
         const idxC = full.indexOf(DELIM_CHOICES);
         const scene = tidy(idxC === -1 ? full : full.slice(0, idxC));
-        sceneEl.textContent = scene;
+        sceneEl.textContent = scene; // clean, fully-revealed text (no fade spans)
         sceneEl.classList.remove("streaming");
 
         let afterChoices = idxC === -1 ? "" : full.slice(idxC + DELIM_CHOICES.length);
