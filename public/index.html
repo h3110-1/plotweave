@@ -79,7 +79,8 @@
 
       /* ---------- Start screen ---------- */
       #start-screen,
-      #password-screen {
+      #password-screen,
+      #character-screen {
         animation: rise 0.8s ease both;
       }
 
@@ -296,6 +297,181 @@
       .begin-btn:hover,
       .action-btn:hover {
         filter: brightness(1.08);
+      }
+
+      /* ---------- Character setup ---------- */
+      .char-setup {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        max-width: 420px;
+        margin: 0 auto;
+      }
+
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        text-align: left;
+      }
+
+      .field span {
+        color: var(--ink-soft);
+        font-size: 0.9rem;
+        letter-spacing: 0.03em;
+      }
+
+      .role-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: center;
+      }
+
+      .role-chip {
+        padding: 7px 14px;
+        border-radius: 20px;
+        background: #241f18;
+        border: 1px solid var(--line);
+        color: var(--ink);
+        font-family: "EB Garamond", serif;
+        font-size: 0.95rem;
+        cursor: pointer;
+        transition: border-color 0.2s ease, background 0.2s ease;
+      }
+
+      .role-chip:hover {
+        border-color: var(--gold);
+        background: #2c251b;
+      }
+
+      .char-setup-actions {
+        display: flex;
+        gap: 10px;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 6px;
+      }
+
+      .char-setup-actions .begin-adventure {
+        width: auto;
+        margin: 0;
+      }
+
+      /* ---------- Character side panel ---------- */
+      .char-panel {
+        position: fixed;
+        top: 18px;
+        right: 18px;
+        width: 220px;
+        z-index: 3;
+        background: linear-gradient(180deg, #241f18, var(--panel));
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        box-shadow: 0 18px 40px var(--shadow);
+        padding: 16px 16px 14px;
+        font-size: 0.92rem;
+      }
+
+      .char-head {
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 9px;
+        margin-bottom: 4px;
+      }
+
+      .char-name {
+        display: block;
+        font-family: "Cinzel", serif;
+        color: var(--gold-bright);
+        font-size: 1.05rem;
+      }
+
+      .char-role {
+        display: block;
+        color: var(--ink-soft);
+        font-style: italic;
+        font-size: 0.85rem;
+        text-transform: capitalize;
+      }
+
+      .char-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        margin: 10px 0 4px;
+      }
+
+      .char-block {
+        margin-top: 10px;
+      }
+
+      .char-label {
+        font-family: "Cinzel", serif;
+        font-size: 0.68rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--gold);
+        opacity: 0.75;
+      }
+
+      .char-health {
+        color: var(--ink);
+      }
+
+      .char-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 6px;
+      }
+
+      .char-chip {
+        background: #2c251b;
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        padding: 3px 9px;
+        font-size: 0.8rem;
+        color: var(--ink);
+      }
+
+      .char-list {
+        list-style: none;
+        margin: 6px 0 0;
+        padding: 0;
+      }
+
+      .char-list li {
+        padding: 3px 0 3px 14px;
+        position: relative;
+        color: var(--ink);
+      }
+
+      .char-list li::before {
+        content: "•";
+        position: absolute;
+        left: 0;
+        color: var(--gold);
+      }
+
+      .char-empty {
+        color: var(--ink-soft);
+        font-style: italic;
+        opacity: 0.7;
+      }
+
+      .char-list li.char-empty::before {
+        content: "";
+      }
+
+      /* On narrower screens the panel can't float beside the book — show it
+         as a card at the top of the play screen instead. */
+      @media (max-width: 1180px) {
+        .char-panel {
+          position: static;
+          width: auto;
+          margin: 0 0 1.5rem;
+          box-shadow: none;
+        }
       }
 
       /* ---------- Game screen ---------- */
@@ -622,8 +798,55 @@
         </form>
       </section>
 
+      <!-- Character setup screen -->
+      <section id="character-screen" class="screen hidden">
+        <h1 class="title">Plotweave</h1>
+        <p class="subtitle">Who are you?</p>
+        <form id="character-form" class="char-setup">
+          <label class="field">
+            <span>Name</span>
+            <input id="char-name-input" type="text" placeholder="e.g. Mara Vance" autocomplete="off" />
+          </label>
+          <label class="field">
+            <span>Role</span>
+            <input id="char-role-input" type="text" placeholder="e.g. smuggler, knight, detective" autocomplete="off" />
+          </label>
+          <div id="role-chips" class="role-chips">
+            <button type="button" class="role-chip" data-role="Warrior">Warrior</button>
+            <button type="button" class="role-chip" data-role="Rogue">Rogue</button>
+            <button type="button" class="role-chip" data-role="Mage">Mage</button>
+            <button type="button" class="role-chip" data-role="Explorer">Explorer</button>
+            <button type="button" class="role-chip" data-role="Outlaw">Outlaw</button>
+            <button type="button" class="role-chip" data-role="Detective">Detective</button>
+          </div>
+          <div class="char-setup-actions">
+            <button type="button" id="char-back" class="modal-btn ghost">← Back</button>
+            <button type="submit" class="begin-adventure">Begin Adventure ▸</button>
+          </div>
+        </form>
+      </section>
+
       <!-- Story / play screen -->
       <section id="game-screen" class="screen hidden">
+        <aside id="char-panel" class="char-panel hidden">
+          <div class="char-head">
+            <span id="char-name" class="char-name">—</span>
+            <span id="char-role" class="char-role"></span>
+          </div>
+          <div class="char-row">
+            <span class="char-label">Health</span>
+            <span id="char-health" class="char-health">—</span>
+          </div>
+          <div class="char-block">
+            <span class="char-label">Status</span>
+            <div id="char-status" class="char-chips"></div>
+          </div>
+          <div class="char-block">
+            <span class="char-label">Inventory</span>
+            <ul id="char-inventory" class="char-list"></ul>
+          </div>
+        </aside>
+
         <div id="story" class="story"></div>
 
         <div id="choices" class="choices"></div>
@@ -683,6 +906,20 @@
       const customThemeForm = document.getElementById("custom-theme-form");
       const customThemeInput = document.getElementById("custom-theme-input");
 
+      const characterScreen = document.getElementById("character-screen");
+      const characterForm = document.getElementById("character-form");
+      const charNameInput = document.getElementById("char-name-input");
+      const charRoleInput = document.getElementById("char-role-input");
+      const roleChips = document.getElementById("role-chips");
+      const charBack = document.getElementById("char-back");
+
+      const charPanel = document.getElementById("char-panel");
+      const charName = document.getElementById("char-name");
+      const charRole = document.getElementById("char-role");
+      const charHealth = document.getElementById("char-health");
+      const charStatus = document.getElementById("char-status");
+      const charInventory = document.getElementById("char-inventory");
+
       const customActionForm = document.getElementById("custom-action-form");
       const customActionInput = document.getElementById("custom-action-input");
       const restartBtn = document.getElementById("restart-btn");
@@ -703,8 +940,13 @@
       const KEEP_RECENT_TURNS = 5; // recent turns kept word-for-word
       const SUMMARIZE_AFTER_TURNS = 9; // begin folding older turns past this length
 
+      let pendingTheme = ""; // theme chosen, awaiting character setup
+      let character = { name: "", role: "" };
+      let state = { health: "Healthy", status: [], inventory: [] };
+
       // ---- Story streaming ----
-      const DELIM = "###CHOICES###";
+      const DELIM_CHOICES = "###CHOICES###";
+      const DELIM_STATE = "###STATE###";
       let currentTurnEls = []; // DOM nodes for the in-progress turn (removed on failure)
 
       // Strip stray tags / collapse spaces, but keep paragraph newlines.
@@ -730,6 +972,28 @@
           choices.push("Press onward into whatever comes next.");
         }
         return choices;
+      }
+
+      function parseState(text) {
+        const m = text.match(/\{[\s\S]*\}/); // grab the JSON object, ignore stray text
+        if (!m) return null;
+        try {
+          const o = JSON.parse(m[0]);
+          return {
+            health:
+              typeof o.health === "string" && o.health.trim()
+                ? o.health.trim()
+                : state.health,
+            status: Array.isArray(o.status)
+              ? o.status.filter((s) => typeof s === "string" && s.trim()).slice(0, 8)
+              : [],
+            inventory: Array.isArray(o.inventory)
+              ? o.inventory.filter((s) => typeof s === "string" && s.trim()).slice(0, 24)
+              : [],
+          };
+        } catch {
+          return null;
+        }
       }
 
       function removeCurrentTurnEls() {
@@ -787,14 +1051,19 @@
         if (busy || !theme) return;
         history = [];
         summary = "";
+        state = { health: "Healthy", status: [], inventory: [] };
+        clearSelection();
         showScreen("game");
         storyEl.innerHTML = ""; // fresh tale
         choicesEl.innerHTML = "";
         currentTurnEls = [];
         pendingAction = null;
+        renderCharPanel();
         const userMsg =
           `Begin a brand new adventure with this theme or setting: "${theme}". ` +
-          "Write the opening scene and the first three choices.";
+          `The player character is ${character.name}, a ${character.role}. ` +
+          "Establish them in the world with a fitting starting inventory and health, " +
+          "then write the opening scene and the first three choices.";
         lastTurn = () => streamStory(userMsg);
         await runTurn();
       }
@@ -855,7 +1124,7 @@
             "Content-Type": "application/json",
             "x-app-password": appPassword,
           },
-          body: JSON.stringify({ messages }),
+          body: JSON.stringify({ messages, character, state }),
         });
 
         if (res.status === 401) {
@@ -881,7 +1150,7 @@
           const { done, value } = await reader.read();
           if (done) break;
           full += decoder.decode(value, { stream: true });
-          const idx = full.indexOf(DELIM);
+          const idx = full.indexOf(DELIM_CHOICES);
           if (idx === -1) {
             sceneEl.textContent = tidyLive(full);
             sceneEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -891,12 +1160,26 @@
           }
         }
 
-        // Finalise scene + choices.
-        const idx = full.indexOf(DELIM);
-        const scene = tidy(idx === -1 ? full : full.slice(0, idx));
+        // Finalise scene, choices, and character state.
+        const idxC = full.indexOf(DELIM_CHOICES);
+        const scene = tidy(idxC === -1 ? full : full.slice(0, idxC));
         sceneEl.textContent = scene;
         sceneEl.classList.remove("streaming");
-        renderChoices(parseChoices(idx === -1 ? "" : full.slice(idx + DELIM.length)));
+
+        let afterChoices = idxC === -1 ? "" : full.slice(idxC + DELIM_CHOICES.length);
+        let stateText = "";
+        const idxS = afterChoices.indexOf(DELIM_STATE);
+        if (idxS !== -1) {
+          stateText = afterChoices.slice(idxS + DELIM_STATE.length);
+          afterChoices = afterChoices.slice(0, idxS);
+        }
+        renderChoices(parseChoices(afterChoices));
+
+        const newState = parseState(stateText);
+        if (newState) {
+          state = newState;
+          renderCharPanel();
+        }
 
         // Commit this turn to the permanent story + history.
         history = [
@@ -918,6 +1201,37 @@
           btn.addEventListener("click", () => takeAction(choice));
           choicesEl.appendChild(btn);
         });
+      }
+
+      // Render the character side panel from the current `character` + `state`.
+      function renderCharPanel() {
+        charPanel.classList.remove("hidden");
+        charName.textContent = character.name || "—";
+        charRole.textContent = character.role || "";
+        charHealth.textContent = state.health || "—";
+
+        charStatus.innerHTML = "";
+        if (state.status.length) {
+          state.status.forEach((s) => {
+            const chip = document.createElement("span");
+            chip.className = "char-chip";
+            chip.textContent = s;
+            charStatus.appendChild(chip);
+          });
+        } else {
+          charStatus.innerHTML = '<span class="char-empty">None</span>';
+        }
+
+        charInventory.innerHTML = "";
+        if (state.inventory.length) {
+          state.inventory.forEach((item) => {
+            const li = document.createElement("li");
+            li.textContent = item;
+            charInventory.appendChild(li);
+          });
+        } else {
+          charInventory.innerHTML = '<li class="char-empty">Empty</li>';
+        }
       }
 
       function renderError(message) {
@@ -951,6 +1265,7 @@
       function showScreen(which) {
         passwordScreen.classList.toggle("hidden", which !== "password");
         startScreen.classList.toggle("hidden", which !== "start");
+        characterScreen.classList.toggle("hidden", which !== "character");
         gameScreen.classList.toggle("hidden", which !== "game");
       }
 
@@ -1053,15 +1368,35 @@
 
       beginSelected.addEventListener("click", () => {
         if (!selection.length) return;
-        const themes = selection.map((c) => c.dataset.theme);
-        clearSelection();
-        startAdventure(combinedTheme(themes));
+        goToCharacter(combinedTheme(selection.map((c) => c.dataset.theme)));
+      });
+
+      // ---- Character setup flow ----
+      function goToCharacter(theme) {
+        pendingTheme = theme;
+        showScreen("character");
+        charNameInput.focus();
+      }
+
+      roleChips.addEventListener("click", (e) => {
+        const chip = e.target.closest(".role-chip");
+        if (chip) charRoleInput.value = chip.dataset.role;
+      });
+
+      charBack.addEventListener("click", () => showScreen("start"));
+
+      characterForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const name = charNameInput.value.trim() || "the Wanderer";
+        const role = charRoleInput.value.trim() || "wanderer";
+        character = { name, role };
+        startAdventure(pendingTheme);
       });
 
       customThemeForm.addEventListener("submit", (e) => {
         e.preventDefault();
         const theme = customThemeInput.value.trim();
-        if (theme) startAdventure(theme);
+        if (theme) goToCharacter(theme);
       });
 
       customActionForm.addEventListener("submit", (e) => {

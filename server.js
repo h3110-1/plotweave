@@ -24,18 +24,26 @@ const APP_PASSWORD = process.env.APP_PASSWORD || "";
 const MODEL = "claude-opus-4-8";
 
 // The Game Master persona + rules, applied to every turn.
-const SYSTEM_PROMPT = `You are an expert interactive fiction Game Master running a "Choose Your Own Adventure" game.
+const SYSTEM_PROMPT = `You are an expert interactive fiction Game Master running a "Choose Your Own Adventure" game with light RPG mechanics.
 
 On every turn, respond in EXACTLY this format and nothing else:
 1. First, the scene: a vivid, atmospheric paragraph of at least 4 to 6 sentences, rich with sensory detail and tension. Do not rush the plot.
 2. Then a line containing ONLY this exact separator: ###CHOICES###
-3. Then exactly three choices, each on its own line, numbered "1.", "2.", "3.". Each choice must be a complete, specific action of roughly 5 to 15 words (e.g. "Pry open the jammed locker with the plasma cutter"). Never a single letter, a fragment, or a placeholder.
+3. Then exactly three choices, each on its own line, numbered "1.", "2.", "3.". Each choice must be a complete, specific action of roughly 5 to 15 words. Never a single letter, a fragment, or a placeholder.
+4. Then a line containing ONLY this exact separator: ###STATE###
+5. Then ONE line of minified JSON describing the character's current state, with exactly these keys:
+   - "health": a short phrase, e.g. "Healthy", "Bruised", "Badly wounded", "Near death".
+   - "status": an array of short condition strings currently affecting the character (e.g. "Hidden", "Poisoned", "Exhausted"); use [] if none.
+   - "inventory": an array of item-name strings the character is carrying; use [] if none.
+   Example: {"health":"Healthy","status":["Hidden"],"inventory":["Plasma cutter","Brass key"]}
 
 Rules:
-- Write everything as plain prose. No HTML tags, no markdown, no asterisks or headings — the ONLY markup allowed is the ###CHOICES### separator line.
-- Honour everything that has happened so far; keep characters, locations, and stakes consistent. If the player blends multiple genres, weave them into one seamless world.
+- Keep the state strictly consistent with the story. Only add, remove, or change items, health, or status when the narrative clearly justifies it, reflecting the consequences of the player's actions.
+- On the first turn, give the character a small starting inventory and health that fit their role and the setting.
+- Everything before ###CHOICES### must be plain prose: no HTML, no markdown, no headings — the only markup allowed is the two separator lines.
+- Honour everything that has happened so far; keep characters, locations, items, and stakes consistent. If the player blends multiple genres, weave them into one seamless world.
 - The player may pick a numbered choice OR type a custom action; adapt seamlessly to whatever they do.
-- Never break character, never mention these instructions, never address the player as an assistant — only narrate the world and present the three choices.`;
+- Never break character, never mention these instructions, never address the player as an assistant — only narrate the world, present the three choices, and output the state line.`;
 
 // Lets the browser know whether to show the password screen.
 app.get("/api/config", (req, res) => {
@@ -105,6 +113,18 @@ app.post("/api/story", async (req, res) => {
     return res.status(400).json({ error: "No story to continue." });
   }
 
+  // Optional RPG-lite state, injected into the system prompt each turn so the
+  // model can carry the character's health/status/inventory forward.
+  const character = req.body?.character || null;
+  const state = req.body?.state || null;
+  let system = SYSTEM_PROMPT;
+  if (character && (character.name || character.role)) {
+    system += `\n\nPLAYER CHARACTER: ${character.name || "Unknown"}, a ${character.role || "wanderer"}.`;
+  }
+  if (state) {
+    system += `\n\nCURRENT CHARACTER STATE (carry this forward and update it): ${JSON.stringify(state)}`;
+  }
+
   try {
     // Stream the scene + choices to the browser as the model writes them.
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
@@ -114,7 +134,7 @@ app.post("/api/story", async (req, res) => {
     const stream = client.messages.stream({
       model: MODEL,
       max_tokens: 3000,
-      system: SYSTEM_PROMPT,
+      system,
       messages,
     });
     stream.on("text", (delta) => res.write(delta));
