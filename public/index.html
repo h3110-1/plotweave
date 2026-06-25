@@ -438,6 +438,29 @@
         list-style: none;
         margin: 6px 0 0;
         padding: 0;
+        /* Scroll within the panel once the inventory grows long. */
+        max-height: min(260px, 34vh);
+        overflow-y: auto;
+        padding-right: 4px;
+        scrollbar-width: thin;
+        scrollbar-color: var(--line) transparent;
+      }
+
+      .char-list::-webkit-scrollbar {
+        width: 8px;
+      }
+
+      .char-list::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      .char-list::-webkit-scrollbar-thumb {
+        background: var(--line);
+        border-radius: 4px;
+      }
+
+      .char-list::-webkit-scrollbar-thumb:hover {
+        background: var(--gold);
       }
 
       .char-list li {
@@ -964,6 +987,8 @@
       let pendingTheme = ""; // theme chosen, awaiting character setup
       let character = { name: "", role: "" };
       let state = { health: "Healthy", status: [], inventory: [] };
+      let raphFallPending = false; // Raph easter egg: scripted fall on the first action
+      let raphAlexPending = false; // Raph easter egg: scripted Alex climb on the next action
 
       // ---- Story streaming ----
       const DELIM_CHOICES = "###CHOICES###";
@@ -1016,22 +1041,38 @@
       function parseState(text) {
         const m = text.match(/\{[\s\S]*\}/); // grab the JSON object, ignore stray text
         if (!m) return null;
+        const clean = (v) =>
+          Array.isArray(v)
+            ? v.filter((s) => typeof s === "string" && s.trim()).map((s) => s.trim())
+            : [];
         try {
           const o = JSON.parse(m[0]);
           return {
             health:
-              typeof o.health === "string" && o.health.trim()
-                ? o.health.trim()
-                : state.health,
-            status: Array.isArray(o.status)
-              ? o.status.filter((s) => typeof s === "string" && s.trim()).slice(0, 8)
-              : [],
-            inventory: Array.isArray(o.inventory)
-              ? o.inventory.filter((s) => typeof s === "string" && s.trim()).slice(0, 24)
-              : [],
+              typeof o.health === "string" && o.health.trim() ? o.health.trim() : null,
+            status: clean(o.status).slice(0, 8),
+            gained: clean(o.gained).slice(0, 12),
+            lost: clean(o.lost).slice(0, 12),
           };
         } catch {
           return null;
+        }
+      }
+
+      // Apply a state delta to the authoritative client-side inventory. The model
+      // only reports gains/losses, so the list never drifts or duplicates.
+      function applyStateDelta(d) {
+        if (d.health) state.health = d.health;
+        state.status = d.status;
+        d.lost.forEach((item) => {
+          const i = state.inventory.findIndex(
+            (x) => x.toLowerCase() === item.toLowerCase(),
+          );
+          if (i !== -1) state.inventory.splice(i, 1);
+        });
+        d.gained.forEach((item) => state.inventory.push(item));
+        if (state.inventory.length > 40) {
+          state.inventory = state.inventory.slice(-40); // safety cap
         }
       }
 
@@ -1098,20 +1139,56 @@
         currentTurnEls = [];
         pendingAction = null;
         renderCharPanel();
-        const userMsg =
-          `Begin a brand new adventure with this theme or setting: "${theme}". ` +
-          `The player character is ${character.name}, a ${character.role}. ` +
-          "Establish them in the world with a fitting starting inventory and health, " +
-          "then write the opening scene and the first three choices.";
+        // Easter egg: anyone named "Raph" gets stuck on a brutal climbing wall,
+        // no matter the chosen theme.
+        const isRaph = character.name.trim().toLowerCase() === "raph";
+        raphFallPending = isRaph; // arm the scripted fall for Raph's first action
+        raphAlexPending = false; // the Alex beat is armed after the fall
+        const userMsg = isRaph
+          ? `Begin a brand new adventure. IGNORE any theme or setting — the entire ` +
+            `story takes place on a single, extremely difficult indoor rock-climbing ` +
+            `wall. The player character is ${character.name}, a climber clinging to the ` +
+            `wall: utterly exhausted, forearms burning and trembling, almost at the very ` +
+            `top after a gruelling ascent, with the final holds tantalisingly just out of ` +
+            `reach. Establish this vividly with a fitting starting inventory (climbing ` +
+            `gear), then write the opening scene and the first three choices.`
+          : `Begin a brand new adventure with this theme or setting: "${theme}". ` +
+            `The player character is ${character.name}, a ${character.role}. ` +
+            "Establish them in the world with a fitting starting inventory and health, " +
+            "then write the opening scene and the first three choices.";
         lastTurn = () => streamStory(userMsg);
         await runTurn();
       }
 
-      async function takeAction(action) {
+      async function takeAction(action, custom = false) {
         if (busy || !action) return;
         // history isn't committed until a turn succeeds, so retrying replays the same turn.
         pendingAction = action;
-        const userMsg = `The player chooses: ${action}`;
+        let userMsg = custom
+          ? `The player takes this custom action of their own choosing — honour it ` +
+            `faithfully and make exactly this happen in the story: ${action}`
+          : `The player chooses: ${action}`;
+        // Raph easter egg: two scripted beats — the fall, then Alex's climb.
+        if (raphFallPending) {
+          raphFallPending = false;
+          raphAlexPending = true; // arm the Alex beat for the following action
+          userMsg +=
+            ` However, no matter what the player just attempted, it goes wrong and Raph ` +
+            `FALLS from the wall. His belayer — who is always named Kalin — panics and ` +
+            `throws both hands up to try to physically catch Raph, completely letting go ` +
+            `of the belay rope. The climbing instructor lunges and grabs the loose rope ` +
+            `just in time, arresting Raph's fall and saving him, then carefully lowers him ` +
+            `safely down to the ground. Narrate this dramatic moment in full.`;
+        } else if (raphAlexPending) {
+          raphAlexPending = false;
+          userMsg +=
+            ` Then, no matter what the player just attempted, this happens next: another ` +
+            `climber named Alex starts up the very same wall and races up astonishingly ` +
+            `fast. With his unusually long arms, Alex reaches the top hold easily while ` +
+            `stretching up from three holds LOWER than the highest point Raph had managed ` +
+            `to reach. From below, Raph cranes his neck and shouts up at him: "Mr Tickle!" ` +
+            `Narrate this moment vividly.`;
+        }
         lastTurn = () => streamStory(userMsg);
         await runTurn();
       }
@@ -1241,9 +1318,9 @@
         }
         renderChoices(parseChoices(afterChoices));
 
-        const newState = parseState(stateText);
-        if (newState) {
-          state = newState;
+        const delta = parseState(stateText);
+        if (delta) {
+          applyStateDelta(delta);
           renderCharPanel();
         }
 
@@ -1290,11 +1367,14 @@
 
         charInventory.innerHTML = "";
         if (state.inventory.length) {
-          state.inventory.forEach((item) => {
+          // Group identical items into a single "name ×N" line.
+          const counts = new Map();
+          state.inventory.forEach((it) => counts.set(it, (counts.get(it) || 0) + 1));
+          counts.forEach((n, it) => {
             const li = document.createElement("li");
-            li.textContent = item;
+            li.textContent = n > 1 ? `${it} ×${n}` : it;
             li.title = "Use this item";
-            li.addEventListener("click", () => useItem(item));
+            li.addEventListener("click", () => useItem(it));
             charInventory.appendChild(li);
           });
         } else {
@@ -1490,7 +1570,7 @@
         const action = customActionInput.value.trim();
         if (action) {
           customActionInput.value = "";
-          takeAction(action);
+          takeAction(action, true); // custom typed action — honour it faithfully
         }
       });
 
@@ -1538,7 +1618,13 @@
       }
 
       copyBtn.addEventListener("click", async () => {
-        const text = storyEl.innerText.trim(); // all scenes + actions, as shown
+        // Only the scene prose — skip the "Scene N" markers and the "❯ …" lines
+        // showing the choices you took (and the choice buttons, which live outside
+        // the story element entirely).
+        const text = Array.from(storyEl.querySelectorAll(".scene"))
+          .map((el) => el.innerText.trim())
+          .filter(Boolean)
+          .join("\n\n");
         if (!text) return;
         const ok = await copyText(text);
         copyBtn.textContent = ok ? "✓ Copied!" : "Couldn't copy";

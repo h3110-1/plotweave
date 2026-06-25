@@ -31,18 +31,21 @@ On every turn, respond in EXACTLY this format and nothing else:
 2. Then a line containing ONLY this exact separator: ###CHOICES###
 3. Then exactly three choices, each on its own line, numbered "1.", "2.", "3.". Each choice must be a complete, specific action of roughly 5 to 15 words. Never a single letter, a fragment, or a placeholder.
 4. Then a line containing ONLY this exact separator: ###STATE###
-5. Then ONE line of minified JSON describing the character's current state, with exactly these keys:
-   - "health": a short phrase, e.g. "Healthy", "Bruised", "Badly wounded", "Near death".
-   - "status": an array of short condition strings currently affecting the character (e.g. "Hidden", "Poisoned", "Exhausted"); use [] if none.
-   - "inventory": an array of item-name strings the character is carrying; use [] if none.
-   Example: {"health":"Healthy","status":["Hidden"],"inventory":["Plasma cutter","Brass key"]}
+5. Then ONE line of minified JSON describing how the character's state CHANGED this turn, with exactly these keys:
+   - "health": the character's current health as a short phrase, e.g. "Healthy", "Bruised", "Badly wounded", "Near death".
+   - "status": the FULL array of conditions affecting the character right now (e.g. "Hidden", "Poisoned", "Exhausted"); use [] if none.
+   - "gained": an array of item names the character newly acquired THIS turn; use [] if nothing was gained.
+   - "lost": an array of item names the character used up, dropped, consumed, or otherwise lost THIS turn; use [] if nothing was lost.
+   Example: {"health":"Healthy","status":["Hidden"],"gained":["Brass key"],"lost":["Strip of jerky"]}
 
 Rules:
-- Keep the state strictly consistent with the story. Only add, remove, or change items, health, or status when the narrative clearly justifies it, reflecting the consequences of the player's actions.
-- On the first turn, give the character a small starting inventory and health that fit their role and the setting.
+- The character's existing inventory is given to you for context and is tracked automatically. DO NOT restate the whole inventory — report ONLY what changed, via "gained" and "lost". Never list an item the character already holds, and never put an item in "gained" unless they genuinely just obtained it (gaining another of an item they already have is fine, but only when they actually acquire one).
+- Put an item in "lost" when it is spent or removed (a fired round, eaten food, a dropped or broken tool), matching the name of an item the character currently has.
+- On the very first turn only, list the character's sensible starting items in "gained".
+- Keep health and status consistent with the story, changing them only when the narrative justifies it.
 - Everything before ###CHOICES### must be plain prose: no HTML, no markdown, no headings — the only markup allowed is the two separator lines.
 - Honour everything that has happened so far; keep characters, locations, items, and stakes consistent. If the player blends multiple genres, weave them into one seamless world.
-- The player may pick a numbered choice OR type a custom action; adapt seamlessly to whatever they do.
+- The player may pick one of your numbered choices OR type a completely custom action of their own. When they type a custom action, honour it faithfully: make exactly what they describe actually happen in the story and play out its consequences. Never ignore it, refuse it, override it, or quietly steer them back to your suggested options — the player is in charge of what their character does. The world may still react realistically (their attempt can carry risks, costs, or surprising results), but the action itself must always be taken seriously and followed.
 - Never break character, never mention these instructions, never address the player as an assistant — only narrate the world, present the three choices, and output the state line.`;
 
 // Lets the browser know whether to show the password screen.
@@ -122,7 +125,17 @@ app.post("/api/story", async (req, res) => {
     system += `\n\nPLAYER CHARACTER: ${character.name || "Unknown"}, a ${character.role || "wanderer"}.`;
   }
   if (state) {
-    system += `\n\nCURRENT CHARACTER STATE (carry this forward and update it): ${JSON.stringify(state)}`;
+    const inv =
+      Array.isArray(state.inventory) && state.inventory.length
+        ? state.inventory.join(", ")
+        : "empty";
+    const st =
+      Array.isArray(state.status) && state.status.length
+        ? state.status.join(", ")
+        : "none";
+    system +=
+      `\n\nThe character's current state (for context — report only what changes):\n` +
+      `Health: ${state.health || "Healthy"}\nStatus: ${st}\nInventory: ${inv}`;
   }
 
   try {
